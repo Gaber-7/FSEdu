@@ -1,0 +1,181 @@
+@page "/student/activity"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject NavigationManager Nav
+
+<PageTitle>سجلّ نشاطي</PageTitle>
+
+<div class="act-page">
+    <div class="fs-container">
+        <header class="act-head">
+            <h1>📜 سجلّ نشاطي</h1>
+            <p class="fs-text-muted">رحلتك التعليمية مرتّبة زمنيًا.</p>
+        </header>
+
+        <div class="act-toolbar fs-card">
+            <span class="fs-text-muted">عرض الفئة:</span>
+            <button class="act-tab @(_filter is null ? "active" : "")" @onclick="() => SetFilter(null)">الكل</button>
+            <button class="act-tab @(_filter == "lesson" ? "active" : "")" @onclick="@(() => SetFilter("lesson"))">▶ دروس</button>
+            <button class="act-tab @(_filter == "badge" ? "active" : "")" @onclick="@(() => SetFilter("badge"))">🏆 شارات</button>
+            <button class="act-tab @(_filter == "assessment" ? "active" : "")" @onclick="@(() => SetFilter("assessment"))">📝 اختبارات</button>
+            <button class="act-tab @(_filter == "question" ? "active" : "")" @onclick="@(() => SetFilter("question"))">❓ أسئلة</button>
+            <button class="act-tab @(_filter == "review" ? "active" : "")" @onclick="@(() => SetFilter("review"))">⭐ تقييمات</button>
+            <button class="act-tab @(_filter == "subscription" ? "active" : "")" @onclick="@(() => SetFilter("subscription"))">💳 اشتراكات</button>
+        </div>
+
+        @if (!_loaded)
+        {
+            <div class="fs-center" style="padding:80px"><span class="fs-spinner"></span></div>
+        }
+        else if (Filtered.Count == 0)
+        {
+            <div class="fs-card empty">
+                <div style="font-size:64px">🌱</div>
+                <h3>لا يوجد نشاط بعد</h3>
+                <p class="fs-text-muted">ابدأ بمشاهدة درس أو حلّ اختبار وسيظهر نشاطك هنا.</p>
+                <a href="/courses" class="fs-btn fs-btn-primary">تصفّح الدورات</a>
+            </div>
+        }
+        else
+        {
+            <div class="act-timeline">
+                @foreach (var grp in Filtered
+                    .GroupBy(i => i.AtUtc.ToLocalTime().Date)
+                    .OrderByDescending(g => g.Key))
+                {
+                    <section class="act-day">
+                        <header class="act-day-head">
+                            <strong>@DayLabel(grp.Key)</strong>
+                            <small class="fs-text-muted">@grp.Key.ToString("yyyy/MM/dd")</small>
+                        </header>
+                        <div class="act-list">
+                            @foreach (var item in grp.OrderByDescending(i => i.AtUtc))
+                            {
+                                var time = item.AtUtc.ToLocalTime();
+                                <a class="act-item" href="@(item.Url ?? "#")">
+                                    <span class="act-emoji @(KindClass(item.Kind))">@item.Emoji</span>
+                                    <div class="act-info">
+                                        <strong>@item.Title</strong>
+                                        @if (!string.IsNullOrEmpty(item.Subtitle))
+                                        {
+                                            <small>@item.Subtitle</small>
+                                        }
+                                    </div>
+                                    <small class="act-time">@time.ToString("HH:mm")</small>
+                                </a>
+                            }
+                        </div>
+                    </section>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .act-page { padding: var(--fs-s-8) 0; min-height: calc(100vh - 72px); }
+    .act-head { margin-bottom: var(--fs-s-4); }
+    .act-head h1 { margin: 0 0 var(--fs-s-1); font-size: 26px; }
+
+    .act-toolbar { padding: var(--fs-s-3); margin-bottom: var(--fs-s-4); display: flex; gap: var(--fs-s-1); flex-wrap: wrap; align-items: center; }
+    .act-toolbar > span { font-size: 13px; margin-left: var(--fs-s-2); }
+    .act-tab {
+        background: var(--fs-bg); border: 1px solid var(--fs-border); border-radius: var(--fs-r-full);
+        padding: 4px 12px; cursor: pointer;
+        font-size: 13px; color: var(--fs-text-muted);
+        transition: all var(--fs-trans);
+    }
+    .act-tab:hover { border-color: var(--fs-primary); color: var(--fs-primary); }
+    .act-tab.active { background: var(--fs-primary); color: white; border-color: var(--fs-primary); }
+
+    .empty { padding: 60px var(--fs-s-5); text-align: center; }
+    .empty h3 { margin: var(--fs-s-3) 0 var(--fs-s-2); }
+
+    .act-timeline { display: flex; flex-direction: column; gap: var(--fs-s-5); }
+    .act-day-head { padding-bottom: var(--fs-s-2); border-bottom: 2px solid var(--fs-border); margin-bottom: var(--fs-s-3); display: flex; justify-content: space-between; align-items: baseline; gap: var(--fs-s-2); }
+    .act-day-head strong { font-size: 17px; }
+    .act-list { display: flex; flex-direction: column; gap: var(--fs-s-2); }
+
+    .act-item {
+        display: flex; align-items: center; gap: var(--fs-s-3);
+        padding: var(--fs-s-3) var(--fs-s-4);
+        background: white; border: 1px solid var(--fs-border); border-radius: var(--fs-r-md);
+        text-decoration: none; color: inherit;
+        transition: all var(--fs-trans);
+    }
+    .act-item:hover { transform: translateX(-4px); box-shadow: 0 4px 12px rgba(0,0,0,0.08); border-color: var(--fs-primary); }
+    .act-emoji {
+        width: 44px; height: 44px; border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 22px; flex-shrink: 0;
+        background: var(--fs-bg);
+    }
+    .act-emoji.lesson { background: var(--fs-primary-soft); }
+    .act-emoji.badge { background: #FEF3C7; }
+    .act-emoji.assessment { background: #DBEAFE; }
+    .act-emoji.question { background: #F3E8FF; }
+    .act-emoji.review { background: #FEE2E2; }
+    .act-emoji.subscription { background: #DCFCE7; }
+    .act-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+    .act-info strong { font-size: 14px; }
+    .act-info small { font-size: 12px; color: var(--fs-text-muted); }
+    .act-time { font-family: monospace; direction: ltr; font-size: 12px; color: var(--fs-text-muted); flex-shrink: 0; }
+</style>
+
+@code {
+    private List<FSEdu.Shared.Contracts.Courses.ActivityItemDto> _items = new();
+    private bool _loaded;
+    private string? _filter;
+
+    private List<FSEdu.Shared.Contracts.Courses.ActivityItemDto> Filtered =>
+        _filter is null ? _items : _items.Where(i => i.Kind == _filter).ToList();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            if (Auth.CurrentUser is null)
+            {
+                Nav.NavigateTo("/login");
+                return;
+            }
+            await Load();
+        }
+    }
+
+    private async Task Load()
+    {
+        _items = await Api.GetMyActivityFeedAsync(60);
+        _loaded = true;
+        StateHasChanged();
+    }
+
+    private void SetFilter(string? kind)
+    {
+        _filter = kind;
+        StateHasChanged();
+    }
+
+    private static string KindClass(string kind) => kind switch
+    {
+        "lesson" => "lesson",
+        "badge" => "badge",
+        "assessment" => "assessment",
+        "question" => "question",
+        "review" => "review",
+        "subscription" => "subscription",
+        _ => ""
+    };
+
+    private static string DayLabel(DateTime localDate)
+    {
+        var today = DateTime.Now.Date;
+        if (localDate == today) return "اليوم";
+        if (localDate == today.AddDays(-1)) return "أمس";
+        var days = (today - localDate).Days;
+        if (days < 7) return $"منذ {days} أيام";
+        return localDate.ToString("yyyy/MM/dd");
+    }
+}

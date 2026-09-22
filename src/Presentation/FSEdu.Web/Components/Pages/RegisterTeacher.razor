@@ -1,0 +1,323 @@
+@page "/register/teacher"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject NavigationManager Nav
+
+<PageTitle>تسجيل مدرس — FSEdu</PageTitle>
+
+<div class="auth-wrapper">
+    <div class="fs-container">
+        <div class="auth-card fs-card fs-card-elevated">
+            <div class="auth-head">
+                <span class="fs-badge fs-badge-accent">👨‍🏫 حساب مدرس</span>
+                <h1>انضم كمدرس إلى منصتنا</h1>
+                <p class="fs-text-muted">أنشئ دوراتك، درّس طلابك، وابنِ سمعتك الأكاديمية</p>
+            </div>
+
+            <div class="steps-bar">
+                <div class="step @(_step >= 1 ? "active" : "")">
+                    <span class="step-num">1</span><span>بيانات الحساب</span>
+                </div>
+                <div class="step-line"></div>
+                <div class="step @(_step >= 2 ? "active" : "")">
+                    <span class="step-num">2</span><span>التخصص والمناطق</span>
+                </div>
+                <div class="step-line"></div>
+                <div class="step @(_step >= 3 ? "active" : "")">
+                    <span class="step-num">3</span><span>المؤهلات</span>
+                </div>
+            </div>
+
+            @if (!string.IsNullOrEmpty(_errorMessage))
+            {
+                <div class="fs-alert fs-alert-error"><span>⚠️</span><span>@_errorMessage</span></div>
+            }
+
+            @if (_success)
+            {
+                <div class="fs-alert fs-alert-success">
+                    <span>✓</span>
+                    <span>تم إنشاء حسابك بنجاح! سيتم مراجعته من الإدارة وتفعيله خلال 24-48 ساعة.</span>
+                </div>
+            }
+
+            @if (_step == 1)
+            {
+                <div class="step-panel">
+                    <div class="fs-form-group">
+                        <label class="fs-label">الاسم الكامل</label>
+                        <input class="fs-input" @bind="_form.FullName" placeholder="الأستاذ محمد أحمد" />
+                    </div>
+                    <div class="fs-form-group">
+                        <label class="fs-label">رقم الهاتف</label>
+                        <input class="fs-input fs-input-phone" @bind="_form.Phone" placeholder="+201012345678" />
+                    </div>
+                    <div class="fs-form-group">
+                        <label class="fs-label">البريد الإلكتروني (اختياري)</label>
+                        <input type="email" class="fs-input" @bind="_form.Email" placeholder="you@example.com" />
+                    </div>
+                    <div class="fs-form-group">
+                        <label class="fs-label">كلمة المرور</label>
+                        <input type="password" class="fs-input" @bind="_form.Password" placeholder="8 أحرف + رقم" />
+                    </div>
+                    <div class="fs-form-group">
+                        <label class="fs-label">نبذة عنك (اختياري)</label>
+                        <textarea class="fs-input" rows="3" @bind="_form.Bio"
+                                  placeholder="خبرتك، أسلوبك، إنجازاتك..."></textarea>
+                    </div>
+                    <div class="fs-form-group">
+                        <label class="fs-label">سنوات الخبرة</label>
+                        <input type="number" class="fs-input" min="0" max="60" @bind="_form.YearsOfExperience" />
+                    </div>
+
+                    <button class="fs-btn fs-btn-primary fs-btn-lg fs-btn-block" @onclick="NextStep1">
+                        التالي ←
+                    </button>
+                </div>
+            }
+            else if (_step == 2)
+            {
+                <div class="step-panel">
+                    <div class="fs-form-group">
+                        <label class="fs-label">المواد التي تدرّسها (يمكن اختيار أكثر من مادة)</label>
+                        <div class="chip-group">
+                            @if (_subjects is null)
+                            {
+                                <span class="fs-spinner"></span>
+                            }
+                            else
+                            {
+                                @foreach (var group in _subjects.GroupBy(s => s.StageId))
+                                {
+                                    @foreach (var s in group.Take(8))
+                                    {
+                                        var id = s.Id;
+                                        var isActive = _form.SubjectIds.Contains(id);
+                                        <button type="button"
+                                                class="chip @(isActive ? "active" : "")"
+                                                @onclick="() => ToggleSubject(id)">
+                                            @s.NameAr
+                                        </button>
+                                    }
+                                }
+                            }
+                        </div>
+                        <small class="fs-text-subtle">مختار: @_form.SubjectIds.Count مادة</small>
+                    </div>
+
+                    <div class="fs-form-group">
+                        <label class="fs-label">المناطق التعليمية (يمكن اختيار أكثر من منطقة)</label>
+                        <div class="chip-group">
+                            @if (_regions is null)
+                            {
+                                <span class="fs-spinner"></span>
+                            }
+                            else
+                            {
+                                @foreach (var r in _regions)
+                                {
+                                    var id = r.Id;
+                                    var isActive = _form.RegionIds.Contains(id);
+                                    <button type="button"
+                                            class="chip @(isActive ? "active" : "")"
+                                            @onclick="() => ToggleRegion(id)">
+                                        @r.NameAr
+                                    </button>
+                                }
+                            }
+                        </div>
+                        <small class="fs-text-subtle">مختار: @_form.RegionIds.Count منطقة</small>
+                    </div>
+
+                    <div class="step-actions">
+                        <button class="fs-btn fs-btn-outline" @onclick="() => _step = 1">← السابق</button>
+                        <button class="fs-btn fs-btn-primary" @onclick="NextStep2">التالي ←</button>
+                    </div>
+                </div>
+            }
+            else if (_step == 3)
+            {
+                <div class="step-panel">
+                    <div class="fs-form-group">
+                        <label class="fs-label">المؤهلات والشهادات</label>
+
+                        @foreach (var (q, i) in _form.Qualifications.Select((q, i) => (q, i)))
+                        {
+                            <div class="qual-row">
+                                <input class="fs-input" placeholder="مثال: بكالوريوس رياضيات" @bind="q.Title" />
+                                <input class="fs-input" placeholder="الجامعة أو المؤسسة" @bind="q.Institution" />
+                                <input type="number" class="fs-input" placeholder="سنة" min="1970" max="2026" @bind="q.Year" />
+                                <button type="button" class="fs-btn fs-btn-ghost fs-btn-sm"
+                                        @onclick="() => RemoveQualification(i)">🗑️</button>
+                            </div>
+                        }
+
+                        <button type="button" class="fs-btn fs-btn-outline fs-btn-sm" @onclick="AddQualification">
+                            + إضافة مؤهل
+                        </button>
+
+                        <p class="fs-text-subtle" style="margin-top: var(--fs-s-4); font-size: 13px;">
+                            💡 يمكنك إضافة روابط الشهادات لاحقًا من خلال الإعدادات. هذه الخطوة اختيارية لكن مهمة لسرعة المراجعة.
+                        </p>
+                    </div>
+
+                    <div class="step-actions">
+                        <button class="fs-btn fs-btn-outline" @onclick="() => _step = 2">← السابق</button>
+                        <button class="fs-btn fs-btn-primary" @onclick="Submit" disabled="@_loading">
+                            @if (_loading) { <span class="fs-spinner"></span><span>جارٍ الإرسال...</span> }
+                            else { <span>إنشاء الحساب</span> }
+                        </button>
+                    </div>
+                </div>
+            }
+
+            <div class="auth-alt">
+                لديك حساب بالفعل؟ <a href="/login">تسجيل الدخول</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .auth-wrapper {
+        padding: 60px 0; min-height: calc(100vh - 72px);
+        display: flex; align-items: flex-start;
+        background:
+            radial-gradient(at 10% 0%, var(--fs-accent-soft) 0%, transparent 50%),
+            radial-gradient(at 90% 100%, var(--fs-primary-soft) 0%, transparent 50%);
+    }
+    .auth-card { max-width: 640px; margin: 0 auto; }
+    .auth-head { text-align: center; margin-bottom: var(--fs-s-6); }
+    .auth-head h1 { font-size: 26px; margin: var(--fs-s-3) 0 var(--fs-s-2); }
+
+    .steps-bar { display: flex; align-items: center; gap: var(--fs-s-2); margin-bottom: var(--fs-s-8); }
+    .step { display: flex; align-items: center; gap: var(--fs-s-2); flex: 1; color: var(--fs-text-muted); font-size: 14px; }
+    .step.active { color: var(--fs-primary); font-weight: 700; }
+    .step-num {
+        width: 32px; height: 32px; border-radius: 50%;
+        display: inline-flex; align-items: center; justify-content: center;
+        background: var(--fs-border); color: var(--fs-text-muted);
+        font-weight: 700; font-size: 14px;
+    }
+    .step.active .step-num { background: var(--fs-primary); color: white; }
+    .step-line { flex: 1; height: 2px; background: var(--fs-border); }
+
+    .chip-group { display: flex; flex-wrap: wrap; gap: var(--fs-s-2); padding: var(--fs-s-3); border: 1px solid var(--fs-border); border-radius: var(--fs-r-md); min-height: 60px; max-height: 200px; overflow-y: auto; }
+    .chip {
+        padding: 6px 14px; border-radius: var(--fs-r-full);
+        background: var(--fs-bg); border: 1px solid var(--fs-border);
+        cursor: pointer; transition: all var(--fs-trans); font-size: 13px; font-family: var(--fs-font-body);
+    }
+    .chip:hover { border-color: var(--fs-primary); }
+    .chip.active { background: var(--fs-primary); color: white; border-color: var(--fs-primary); }
+
+    .qual-row { display: grid; grid-template-columns: 2fr 2fr 1fr auto; gap: var(--fs-s-2); margin-bottom: var(--fs-s-2); }
+    @@media (max-width: 600px) { .qual-row { grid-template-columns: 1fr; } }
+
+    .step-actions { display: flex; gap: var(--fs-s-3); justify-content: space-between; margin-top: var(--fs-s-6); }
+    .step-actions .fs-btn { flex: 1; }
+
+    .auth-alt { text-align: center; margin-top: var(--fs-s-6); color: var(--fs-text-muted); font-size: 14px; }
+</style>
+
+@code {
+    private int _step = 1;
+    private FormModel _form = new();
+    private List<FSEdu.Shared.Contracts.Reference.SubjectDto>? _subjects;
+    private List<FSEdu.Shared.Contracts.Reference.RegionDto>? _regions;
+    private string? _errorMessage;
+    private bool _loading;
+    private bool _success;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _subjects = await Api.GetSubjectsAsync();
+            _regions = (await Api.GetRegionsAsync()).OrderBy(r => r.NameAr).ToList();
+        }
+        catch (Exception ex) { _errorMessage = "تعذر تحميل البيانات: " + ex.Message; }
+    }
+
+    private void NextStep1()
+    {
+        _errorMessage = null;
+        if (string.IsNullOrWhiteSpace(_form.FullName) || _form.FullName.Length < 3)
+            _errorMessage = "الاسم يجب أن يكون 3 أحرف على الأقل";
+        else if (!System.Text.RegularExpressions.Regex.IsMatch(_form.Phone ?? "", @"^\+[1-9]\d{7,14}$"))
+            _errorMessage = "صيغة رقم الهاتف غير صحيحة (مثال: +201012345678)";
+        else if ((_form.Password?.Length ?? 0) < 8)
+            _errorMessage = "كلمة المرور يجب أن تكون 8 أحرف على الأقل";
+        else _step = 2;
+    }
+
+    private void NextStep2()
+    {
+        _errorMessage = null;
+        if (_form.SubjectIds.Count == 0) _errorMessage = "اختر مادة واحدة على الأقل";
+        else if (_form.RegionIds.Count == 0) _errorMessage = "اختر منطقة واحدة على الأقل";
+        else _step = 3;
+    }
+
+    private void ToggleSubject(int id) {
+        if (_form.SubjectIds.Contains(id)) _form.SubjectIds.Remove(id);
+        else _form.SubjectIds.Add(id);
+    }
+
+    private void ToggleRegion(int id) {
+        if (_form.RegionIds.Contains(id)) _form.RegionIds.Remove(id);
+        else _form.RegionIds.Add(id);
+    }
+
+    private void AddQualification() => _form.Qualifications.Add(new QualForm());
+    private void RemoveQualification(int i) => _form.Qualifications.RemoveAt(i);
+
+    private async Task Submit()
+    {
+        _errorMessage = null; _loading = true;
+        try
+        {
+            var quals = _form.Qualifications
+                .Where(q => !string.IsNullOrWhiteSpace(q.Title))
+                .Select(q => new FSEdu.Shared.Contracts.Auth.TeacherQualificationDto(
+                    q.Title!, q.Institution ?? "", q.Year ?? 2020, null))
+                .ToArray();
+
+            var req = new FSEdu.Shared.Contracts.Auth.RegisterTeacherRequest(
+                _form.FullName, _form.Phone, _form.Email, _form.Password,
+                _form.Bio, _form.YearsOfExperience,
+                _form.SubjectIds.ToArray(), _form.RegionIds.ToArray(), quals);
+
+            var (data, error) = await Api.RegisterTeacherAsync(req);
+            if (error is not null) { _errorMessage = error.Message; return; }
+
+            _success = true;
+            if (data is not null) await Auth.SaveAsync(data);
+            await Task.Delay(1500);
+            Nav.NavigateTo("/");
+        }
+        catch (Exception ex) { _errorMessage = "خطأ: " + ex.Message; }
+        finally { _loading = false; }
+    }
+
+    private class FormModel
+    {
+        public string FullName { get; set; } = "";
+        public string Phone { get; set; } = "";
+        public string? Email { get; set; }
+        public string Password { get; set; } = "";
+        public string? Bio { get; set; }
+        public int YearsOfExperience { get; set; } = 1;
+        public List<int> SubjectIds { get; set; } = new();
+        public List<int> RegionIds { get; set; } = new();
+        public List<QualForm> Qualifications { get; set; } = new() { new QualForm() };
+    }
+
+    private class QualForm
+    {
+        public string? Title { get; set; }
+        public string? Institution { get; set; }
+        public int? Year { get; set; } = 2020;
+    }
+}

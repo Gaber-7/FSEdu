@@ -1,0 +1,284 @@
+@page "/admin/discount-rules"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject NavigationManager Nav
+
+<PageTitle>قواعد الخصم التلقائي</PageTitle>
+
+<div class="dr-page">
+    <div class="fs-container">
+        <header class="dr-head">
+            <h1>🎁 قواعد الخصم التلقائي</h1>
+            <button class="fs-btn fs-btn-primary fs-btn-sm" @onclick="() => _showForm = !_showForm">
+                @(_showForm ? "إغلاق" : "➕ قاعدة جديدة")
+            </button>
+        </header>
+        <p class="fs-text-muted">قواعد تُطبَّق تلقائيًا عند اشتراك أي طالب يستوفي الشرط — دون كود.</p>
+
+        @if (_showForm)
+        {
+            <div class="fs-card dr-form">
+                <h3>إنشاء قاعدة جديدة</h3>
+                <div class="dr-grid">
+                    <div>
+                        <label>كود القاعدة (إنجليزي)</label>
+                        <input type="text" class="dr-input" @bind="_code"
+                               placeholder="siblings_2" maxlength="50" />
+                    </div>
+                    <div>
+                        <label>النوع</label>
+                        <select class="dr-input" @bind="_type" @bind:after="OnTypeChanged">
+                            <option value="SiblingsCount">إخوة مشتركون</option>
+                            <option value="SubjectsCount">تعدّد المواد</option>
+                            <option value="LongDuration">ترم/سنة كاملة</option>
+                            <option value="HighAchiever">متفوّقون (XP)</option>
+                            <option value="ReturningStudent">طالب عائد</option>
+                            <option value="ReferralReferee">طالب مُحال (Refer-a-Friend)</option>
+                        </select>
+                    </div>
+                    <div class="full">
+                        <label>العنوان بالعربية</label>
+                        <input type="text" class="dr-input" maxlength="255"
+                               placeholder="مثلاً: خصم الإخوة (طالبين أو أكثر)"
+                               @bind="_titleAr" @bind:event="oninput" />
+                    </div>
+                    <div class="full">
+                        <label>الوصف (اختياري)</label>
+                        <textarea class="dr-input" rows="2" maxlength="500" @bind="_description"></textarea>
+                    </div>
+                    <div>
+                        <label>نسبة الخصم %</label>
+                        <input type="number" class="dr-input" min="1" max="100" step="0.5" @bind="_discount" />
+                    </div>
+                    @if (NeedsThreshold)
+                    {
+                        <div>
+                            <label>@ThresholdLabel</label>
+                            <input type="number" class="dr-input" min="1" @bind="_threshold" />
+                        </div>
+                    }
+                    <div>
+                        <label>تاريخ البدء (اختياري)</label>
+                        <input type="date" class="dr-input" @bind="_validFrom" />
+                    </div>
+                    <div>
+                        <label>تاريخ الانتهاء (اختياري)</label>
+                        <input type="date" class="dr-input" @bind="_validUntil" />
+                    </div>
+                </div>
+                @if (!string.IsNullOrEmpty(_error))
+                {
+                    <div class="fs-alert fs-alert-error">@_error</div>
+                }
+                <div class="dr-actions">
+                    <button class="fs-btn fs-btn-primary" @onclick="Create" disabled="@_saving">
+                        @(_saving ? "جارٍ الحفظ..." : "✓ إنشاء")
+                    </button>
+                    <button class="fs-btn fs-btn-outline" @onclick="() => _showForm = false">إلغاء</button>
+                </div>
+            </div>
+        }
+
+        @if (!_loaded)
+        {
+            <div class="fs-center" style="padding:60px"><span class="fs-spinner"></span></div>
+        }
+        else if (_items.Count == 0)
+        {
+            <div class="fs-card empty">
+                <div style="font-size:64px">🎁</div>
+                <h3>لا توجد قواعد خصم بعد</h3>
+                <p class="fs-text-muted">أنشئ قاعدتك الأولى لتفعيل الخصومات الآلية.</p>
+            </div>
+        }
+        else
+        {
+            <div class="dr-list">
+                @foreach (var r in _items)
+                {
+                    <article class="dr-card fs-card @(r.Active ? "on" : "off")">
+                        <div class="dr-emoji">@TypeIcon(r.Type)</div>
+                        <div class="dr-info">
+                            <div class="dr-info-top">
+                                <strong>@r.TitleAr</strong>
+                                <span class="dr-discount">-@r.DiscountPct.ToString("0.##")%</span>
+                            </div>
+                            <small class="fs-text-muted">@TypeLabel(r.Type)
+                                @if (r.ThresholdInt.HasValue) { <text> · العتبة: @r.ThresholdInt</text> }
+                                · كود: <code>@r.Code</code>
+                            </small>
+                            @if (!string.IsNullOrEmpty(r.DescriptionAr))
+                            {
+                                <p class="dr-desc">@r.DescriptionAr</p>
+                            }
+                            @if (r.ValidFromUtc.HasValue || r.ValidUntilUtc.HasValue)
+                            {
+                                <small class="dr-dates">
+                                    @if (r.ValidFromUtc.HasValue) { <text>من @r.ValidFromUtc.Value.ToLocalTime():yyyy/MM/dd</text> }
+                                    @if (r.ValidUntilUtc.HasValue) { <text> إلى @r.ValidUntilUtc.Value.ToLocalTime():yyyy/MM/dd</text> }
+                                </small>
+                            }
+                        </div>
+                        <div class="dr-act">
+                            @if (r.Active)
+                            {
+                                <button class="fs-btn fs-btn-outline fs-btn-sm" @onclick="() => SetActive(r.Id, false)">إيقاف</button>
+                            }
+                            else
+                            {
+                                <button class="fs-btn fs-btn-primary fs-btn-sm" @onclick="() => SetActive(r.Id, true)">تفعيل</button>
+                            }
+                        </div>
+                    </article>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .dr-page { padding: var(--fs-s-8) 0; min-height: calc(100vh - 72px); }
+    .dr-head { display: flex; justify-content: space-between; align-items: center; gap: var(--fs-s-2); flex-wrap: wrap; }
+    .dr-head h1 { margin: 0; font-size: 24px; }
+
+    .dr-form { padding: var(--fs-s-5); margin: var(--fs-s-4) 0; }
+    .dr-form h3 { margin: 0 0 var(--fs-s-3); }
+    .dr-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--fs-s-3); }
+    .dr-grid .full { grid-column: 1 / -1; }
+    .dr-grid label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+    .dr-input { width: 100%; padding: var(--fs-s-2) var(--fs-s-3); border: 1px solid var(--fs-border); border-radius: var(--fs-r-md); font-size: 14px; font-family: inherit; }
+    .dr-input:focus { outline: none; border-color: var(--fs-primary); }
+    textarea.dr-input { resize: vertical; }
+    .dr-actions { margin-top: var(--fs-s-3); display: flex; gap: var(--fs-s-2); }
+
+    .empty { padding: 60px; text-align: center; }
+    .empty h3 { margin: var(--fs-s-3) 0 var(--fs-s-2); }
+
+    .dr-list { display: flex; flex-direction: column; gap: var(--fs-s-3); margin-top: var(--fs-s-3); }
+    .dr-card { display: grid; grid-template-columns: 56px 1fr 100px; gap: var(--fs-s-3); align-items: center; padding: var(--fs-s-4); border-right: 4px solid var(--fs-border); }
+    .dr-card.on { border-right-color: var(--fs-success); }
+    .dr-card.off { border-right-color: var(--fs-text-muted); opacity: 0.7; }
+    .dr-emoji { width: 44px; height: 44px; border-radius: 50%; background: var(--fs-primary-soft); display: flex; align-items: center; justify-content: center; font-size: 22px; }
+    .dr-info { min-width: 0; }
+    .dr-info-top { display: flex; justify-content: space-between; align-items: baseline; gap: var(--fs-s-2); }
+    .dr-info strong { font-size: 15px; }
+    .dr-discount { font-family: monospace; direction: ltr; font-size: 20px; font-weight: 800; color: var(--fs-primary); }
+    .dr-info code { background: var(--fs-bg); padding: 1px 6px; border-radius: 4px; font-size: 11px; }
+    .dr-desc { margin: var(--fs-s-1) 0 0; font-size: 13px; color: var(--fs-text); }
+    .dr-dates { display: block; font-size: 11px; color: var(--fs-text-muted); margin-top: 4px; }
+</style>
+
+@code {
+    private List<FSEdu.Shared.Contracts.Admin.DiscountRuleDto> _items = new();
+    private bool _loaded;
+    private bool _showForm;
+    private bool _saving;
+    private string? _error;
+
+    private string _code = "";
+    private string _titleAr = "";
+    private string? _description;
+    private string _type = "SiblingsCount";
+    private decimal _discount = 10m;
+    private int? _threshold = 2;
+    private DateTime? _validFrom;
+    private DateTime? _validUntil;
+
+    private bool NeedsThreshold => _type is "SiblingsCount" or "SubjectsCount" or "HighAchiever";
+
+    private string ThresholdLabel => _type switch
+    {
+        "SiblingsCount" => "أقل عدد إخوة (ضمنهم الطالب)",
+        "SubjectsCount" => "أقل عدد مواد",
+        "HighAchiever" => "حد XP الأدنى",
+        _ => "العتبة"
+    };
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            if (Auth.CurrentUser is null || !Auth.IsInRole("Admin"))
+            {
+                Nav.NavigateTo("/login");
+                return;
+            }
+            await Load();
+        }
+    }
+
+    private async Task Load()
+    {
+        _items = await Api.GetDiscountRulesAsync();
+        _loaded = true;
+        StateHasChanged();
+    }
+
+    private void OnTypeChanged()
+    {
+        // Reasonable defaults per type
+        _threshold = _type switch
+        {
+            "SiblingsCount" => 2,
+            "SubjectsCount" => 2,
+            "HighAchiever" => 1000,
+            _ => null
+        };
+        StateHasChanged();
+    }
+
+    private async Task Create()
+    {
+        _error = null;
+        if (string.IsNullOrWhiteSpace(_code) || _code.Trim().Length < 3) { _error = "الكود قصير جدًا"; return; }
+        if (string.IsNullOrWhiteSpace(_titleAr) || _titleAr.Trim().Length < 3) { _error = "العنوان قصير جدًا"; return; }
+        if (_discount <= 0 || _discount > 100) { _error = "نسبة الخصم بين 1 و 100"; return; }
+        if (NeedsThreshold && (!_threshold.HasValue || _threshold <= 0)) { _error = "أدخل العتبة"; return; }
+
+        _saving = true; StateHasChanged();
+        try
+        {
+            var req = new FSEdu.Shared.Contracts.Admin.CreateDiscountRuleRequest(
+                _code.Trim().ToLowerInvariant(), _titleAr.Trim(),
+                string.IsNullOrWhiteSpace(_description) ? null : _description.Trim(),
+                _type, _discount,
+                NeedsThreshold ? _threshold : null,
+                _validFrom?.ToUniversalTime(), _validUntil?.ToUniversalTime());
+            var (id, err) = await Api.CreateDiscountRuleAsync(req);
+            if (err is not null) { _error = err.Message ?? "تعذّر الإنشاء"; return; }
+            _code = ""; _titleAr = ""; _description = null; _discount = 10m;
+            _showForm = false;
+            await Load();
+        }
+        finally { _saving = false; StateHasChanged(); }
+    }
+
+    private async Task SetActive(int id, bool active)
+    {
+        var ok = await Api.SetDiscountRuleActiveAsync(id, active);
+        if (ok) await Load();
+    }
+
+    private static string TypeIcon(string t) => t switch
+    {
+        "SiblingsCount" => "👨‍👩‍👧",
+        "SubjectsCount" => "📚",
+        "LongDuration" => "📅",
+        "HighAchiever" => "🏆",
+        "ReturningStudent" => "🔄",
+        "ReferralReferee" => "🎁",
+        _ => "🎁"
+    };
+
+    private static string TypeLabel(string t) => t switch
+    {
+        "SiblingsCount" => "إخوة مشتركون",
+        "SubjectsCount" => "تعدّد المواد",
+        "LongDuration" => "ترم/سنة كاملة",
+        "HighAchiever" => "متفوّقون",
+        "ReturningStudent" => "طالب عائد",
+        _ => t
+    };
+}

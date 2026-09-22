@@ -1,0 +1,243 @@
+@page "/register"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject NavigationManager Nav
+
+<PageTitle>إنشاء حساب طالب — FSEdu</PageTitle>
+
+<div class="auth-wrapper">
+    <div class="fs-container">
+        <div class="auth-card fs-card fs-card-elevated">
+            <div class="auth-head">
+                <h1>إنشاء حساب طالب جديد</h1>
+                <p class="fs-text-muted">ابدأ رحلة تعليمية مميزة في دقائق — مجانًا</p>
+            </div>
+
+            @if (!string.IsNullOrEmpty(_errorMessage))
+            {
+                <div class="fs-alert fs-alert-error">
+                    <span>⚠️</span>
+                    <span>@_errorMessage</span>
+                </div>
+            }
+
+            @if (_success)
+            {
+                <div class="fs-alert fs-alert-success">
+                    <span>✓</span>
+                    <span>تم إنشاء الحساب بنجاح! جاري التحويل...</span>
+                </div>
+            }
+
+            <EditForm Model="@_form" OnValidSubmit="HandleRegister" FormName="RegisterStudent">
+                <DataAnnotationsValidator />
+
+                <div class="fs-form-group">
+                    <label class="fs-label">الاسم الكامل</label>
+                    <InputText class="fs-input" @bind-Value="_form.FullName" placeholder="أحمد محمد" />
+                    <ValidationMessage For="() => _form.FullName" />
+                </div>
+
+                <div class="fs-form-group">
+                    <label class="fs-label">رقم الهاتف</label>
+                    <InputText class="fs-input fs-input-phone" @bind-Value="_form.Phone" placeholder="+201012345678" />
+                    <ValidationMessage For="() => _form.Phone" />
+                    <small class="fs-text-subtle">مثال: +201012345678 (مع رمز الدولة)</small>
+                </div>
+
+                <div class="fs-form-group">
+                    <label class="fs-label">البريد الإلكتروني (اختياري)</label>
+                    <InputText class="fs-input" @bind-Value="_form.Email" placeholder="you@example.com" type="email" />
+                    <ValidationMessage For="() => _form.Email" />
+                </div>
+
+                <div class="fs-form-group">
+                    <label class="fs-label">كلمة المرور</label>
+                    <InputText type="password" class="fs-input" @bind-Value="_form.Password"
+                                placeholder="8 أحرف على الأقل + رقم" />
+                    <ValidationMessage For="() => _form.Password" />
+                </div>
+
+                <div class="fs-form-row">
+                    <div class="fs-form-group">
+                        <label class="fs-label">المرحلة الدراسية</label>
+                        <InputSelect class="fs-select" @bind-Value="_form.StageId">
+                            <option value="0">-- اختر المرحلة --</option>
+                            @if (_grades is not null)
+                            {
+                                @foreach (var s in _grades)
+                                {
+                                    <option value="@s.Id">@s.NameAr</option>
+                                }
+                            }
+                        </InputSelect>
+                        <ValidationMessage For="() => _form.StageId" />
+                    </div>
+
+                    <div class="fs-form-group">
+                        <label class="fs-label">المحافظة</label>
+                        <InputSelect class="fs-select" @bind-Value="_form.RegionId">
+                            <option value="0">-- اختر المحافظة --</option>
+                            @if (_regions is not null)
+                            {
+                                @foreach (var r in _regions)
+                                {
+                                    <option value="@r.Id">@r.NameAr</option>
+                                }
+                            }
+                        </InputSelect>
+                        <ValidationMessage For="() => _form.RegionId" />
+                    </div>
+                </div>
+
+                <div class="fs-form-group">
+                    <label class="fs-label">رقم هاتف ولي الأمر (اختياري)</label>
+                    <InputText class="fs-input fs-input-phone" @bind-Value="_form.ParentPhone" placeholder="+201012345678" />
+                </div>
+
+                <button type="submit" class="fs-btn fs-btn-primary fs-btn-lg fs-btn-block" disabled="@_loading">
+                    @if (_loading)
+                    {
+                        <span class="fs-spinner"></span>
+                        <span>جارٍ التسجيل...</span>
+                    }
+                    else
+                    {
+                        <span>إنشاء الحساب</span>
+                        <span>←</span>
+                    }
+                </button>
+
+                <div class="auth-alt">
+                    لديك حساب بالفعل؟ <a href="/login">تسجيل الدخول</a>
+                </div>
+            </EditForm>
+        </div>
+    </div>
+</div>
+
+<style>
+    .auth-wrapper {
+        padding: 60px 0;
+        min-height: calc(100vh - 72px);
+        display: flex;
+        align-items: flex-start;
+        background:
+            radial-gradient(at 10% 0%, var(--fs-primary-soft) 0%, transparent 50%),
+            radial-gradient(at 90% 100%, var(--fs-secondary-soft) 0%, transparent 50%);
+    }
+
+    .auth-card {
+        max-width: 560px;
+        margin: 0 auto;
+    }
+
+    .auth-head {
+        text-align: center;
+        margin-bottom: var(--fs-s-8);
+    }
+
+    .auth-head h1 {
+        font-size: 28px;
+        margin-bottom: var(--fs-s-2);
+    }
+
+    .fs-form-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: var(--fs-s-4);
+    }
+
+    @@media (max-width: 600px) {
+        .fs-form-row { grid-template-columns: 1fr; }
+    }
+
+    .auth-alt {
+        text-align: center;
+        margin-top: var(--fs-s-6);
+        color: var(--fs-text-muted);
+        font-size: 14px;
+    }
+</style>
+
+@code {
+    private FormModel _form = new();
+    private List<FSEdu.Shared.Contracts.Reference.StageDto>? _grades;
+    private List<FSEdu.Shared.Contracts.Reference.RegionDto>? _regions;
+    private string? _errorMessage;
+    private bool _loading;
+    private bool _success;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var stages = await Api.GetStagesAsync();
+            _grades = stages.Where(s => s.ParentStageId != null).OrderBy(s => s.LevelOrder).ToList();
+            _regions = (await Api.GetRegionsAsync()).OrderBy(r => r.NameAr).ToList();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = "تعذّر تحميل البيانات. تأكد من تشغيل الـ API: " + ex.Message;
+        }
+    }
+
+    private async Task HandleRegister()
+    {
+        _errorMessage = null;
+        _loading = true;
+
+        try
+        {
+            var req = new FSEdu.Shared.Contracts.Auth.RegisterStudentRequest(
+                _form.FullName, _form.Phone, _form.Email, _form.Password,
+                _form.StageId, _form.RegionId, null, _form.ParentPhone);
+
+            var (data, error) = await Api.RegisterStudentAsync(req);
+
+            if (error is not null)
+            {
+                _errorMessage = error.Message;
+                return;
+            }
+
+            _success = true;
+            await Task.Delay(1200);
+            Nav.NavigateTo("/dashboard/student");
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = "خطأ: " + ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private class FormModel
+    {
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "الاسم مطلوب")]
+        [System.ComponentModel.DataAnnotations.StringLength(200, MinimumLength = 3, ErrorMessage = "الاسم يجب أن يكون 3 أحرف على الأقل")]
+        public string FullName { get; set; } = "";
+
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "رقم الهاتف مطلوب")]
+        [System.ComponentModel.DataAnnotations.RegularExpression(@"^\+[1-9]\d{7,14}$", ErrorMessage = "صيغة رقم الهاتف غير صحيحة")]
+        public string Phone { get; set; } = "";
+
+        [System.ComponentModel.DataAnnotations.EmailAddress(ErrorMessage = "صيغة البريد غير صحيحة")]
+        public string? Email { get; set; }
+
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "كلمة المرور مطلوبة")]
+        [System.ComponentModel.DataAnnotations.StringLength(100, MinimumLength = 8, ErrorMessage = "كلمة المرور يجب ألا تقل عن 8 أحرف")]
+        public string Password { get; set; } = "";
+
+        [System.ComponentModel.DataAnnotations.Range(1, int.MaxValue, ErrorMessage = "اختر مرحلة")]
+        public int StageId { get; set; }
+
+        [System.ComponentModel.DataAnnotations.Range(1, int.MaxValue, ErrorMessage = "اختر محافظة")]
+        public int RegionId { get; set; }
+
+        public string? ParentPhone { get; set; }
+    }
+}

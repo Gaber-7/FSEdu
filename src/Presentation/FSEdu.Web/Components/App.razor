@@ -1,0 +1,40 @@
+@{
+    var culture = System.Threading.Thread.CurrentThread.CurrentUICulture?.TwoLetterISOLanguageName ?? "ar";
+    var dir = culture == "ar" ? "rtl" : "ltr";
+}
+<!DOCTYPE html>
+<html lang="@culture" dir="@dir">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#5B4FE5" />
+    <base href="/" />
+    <title>منصة FSEdu التعليمية</title>
+    <meta name="description" content="منصة تعليمية ذكية للتعليم عن بُعد للطلاب في المراحل الابتدائية والإعدادية" />
+    <link rel="stylesheet" href="@Assets["app.css"]" />
+    <link rel="stylesheet" href="@Assets["FSEdu.Web.styles.css"]" />
+    <ImportMap />
+    <link rel="icon" type="image/png" href="favicon.png" />
+    <link rel="manifest" href="site.webmanifest" />
+    <link rel="apple-touch-icon" href="favicon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="FSEdu" />
+    <script src="js/theme.js"></script>
+    <script src="js/pwa.js"></script>
+    <script src="js/download.js"></script>
+    <HeadOutlet />
+</head>
+
+<body>
+    <Routes />
+    <script src="js/livekit-room.js"></script>
+    <script src="js/whiteboard.js"></script>
+    <script src="js/push.js"></script>
+    <script src="js/lesson-progress.js"></script>
+    <script src="js/search-history.js"></script>
+    <script src="_framework/blazor.web.js"></script>
+</body>
+
+</html>

@@ -1,0 +1,14 @@
+<Project>
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <Company>FullScreen Solutions</Company>
+    <Product>FSEdu - Smart Learning Platform</Product>
+    <Copyright>© FullScreen Solutions</Copyright>
+    <NeutralLanguage>ar-EG</NeutralLanguage>
+  </PropertyGroup>
+</Project>

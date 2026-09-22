@@ -1,0 +1,360 @@
+@page "/parent/children"
+@page "/dashboard/parent"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+
+<PageTitle>أبنائي — لوحة ولي الأمر</PageTitle>
+
+<div class="parent-page">
+    <div class="fs-container">
+        <div class="parent-head">
+            <div>
+                <h1>👨‍👩‍👦 لوحة ولي الأمر</h1>
+                @if (_data is not null)
+                {
+                    <p class="fs-text-muted">أهلاً @_data.FullName — تابع أداء ودرجات أبنائك</p>
+                }
+                else
+                {
+                    <p class="fs-text-muted">تابع أداء ودرجات أبنائك في مكان واحد</p>
+                }
+            </div>
+            <button class="fs-btn fs-btn-primary" @onclick="() => _showAdd = true">+ إضافة ابن</button>
+        </div>
+
+        @if (!_loaded)
+        {
+            <div class="fs-center" style="padding:80px"><span class="fs-spinner"></span></div>
+        }
+        else if (!Auth.IsAuthenticated || !Auth.IsInRole("Parent"))
+        {
+            <div class="fs-alert fs-alert-error">هذه الصفحة لأولياء الأمور فقط. <a href="/login">تسجيل الدخول</a></div>
+        }
+        else if (_data is null || _data.ChildrenCount == 0)
+        {
+            <div class="fs-card fs-center empty">
+                <div style="font-size:64px">👶</div>
+                <h3>لم يتم إضافة أي ابن بعد</h3>
+                <p class="fs-text-muted">أضف أول ابن ببساطة من الزر أعلاه</p>
+            </div>
+        }
+        else
+        {
+            <div class="digest-card">
+                <div class="digest-icon">📧</div>
+                <div class="digest-body">
+                    <strong>تقرير أسبوعى بالبريد الإلكتروني</strong>
+                    <small>
+                        @if (_digestEnabled)
+                        {
+                            <text>مُفعَّل — تصلك رسالة كل سبت بنشاط أبنائك خلال الأسبوع.</text>
+                        }
+                        else
+                        {
+                            <text>مُعطَّل — لن تصلك تقارير أسبوعية على بريدك.</text>
+                        }
+                        @if (_lastDigestUtc.HasValue)
+                        {
+                            <text> آخر إرسال: @_lastDigestUtc.Value.ToLocalTime().ToString("yyyy/MM/dd")</text>
+                        }
+                    </small>
+                </div>
+                <div class="digest-actions">
+                    <button class="fs-btn fs-btn-sm fs-btn-ghost" @onclick="ToggleDigest" disabled="@_digestBusy">
+                        @(_digestEnabled ? "تعطيل" : "تفعيل")
+                    </button>
+                    <button class="fs-btn fs-btn-sm fs-btn-primary" @onclick="SendDigestNow" disabled="@_digestBusy">
+                        @if (_digestSent) { <text>✓ أُرسل</text> }
+                        else if (_digestBusy) { <span class="fs-spinner"></span> }
+                        else { <text>أرسل الآن</text> }
+                    </button>
+                </div>
+            </div>
+
+            <div class="summary-row">
+                <div class="summary-card">
+                    <span class="summary-icon">👶</span>
+                    <div>
+                        <strong>@_data.ChildrenCount</strong>
+                        <small>أبناء مرتبطون</small>
+                    </div>
+                </div>
+                <div class="summary-card">
+                    <span class="summary-icon">✅</span>
+                    <div>
+                        <strong>@_data.Children.Count(c => c.HasActiveSubscription)</strong>
+                        <small>لديهم اشتراك نشط</small>
+                    </div>
+                </div>
+                <div class="summary-card">
+                    <span class="summary-icon">📚</span>
+                    <div>
+                        <strong>@_data.Children.Sum(c => c.AccessibleCoursesCount)</strong>
+                        <small>إجمالي الدورات المتاحة</small>
+                    </div>
+                </div>
+            </div>
+
+            <div class="fs-grid fs-grid-2">
+                @foreach (var c in _data.Children)
+                {
+                    <div class="fs-card child-card">
+                        <div class="child-head">
+                            <div class="avatar">@c.FullName.FirstOrDefault()</div>
+                            <div class="child-info">
+                                <h3>@c.FullName</h3>
+                                <p>@c.StageName</p>
+                            </div>
+                            @if (c.IsPrimary)
+                            {
+                                <span class="fs-badge">أساسي</span>
+                            }
+                        </div>
+
+                        @if (c.HasActiveSubscription)
+                        {
+                            <div class="sub-banner active">
+                                <span>✅ @c.ActiveSubscriptionLabel</span>
+                                @if (c.SubscriptionExpiresAt.HasValue)
+                                {
+                                    var remaining = (int)(c.SubscriptionExpiresAt.Value - DateTime.UtcNow).TotalDays;
+                                    <small>متبقي @remaining يوم</small>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="sub-banner inactive">
+                                <span>⚠️ لا يوجد اشتراك نشط</span>
+                                <a href="/pricing">اشترك الآن ←</a>
+                            </div>
+                        }
+
+                        <div class="child-stats">
+                            <div class="stat">
+                                <strong>@c.XpPoints</strong>
+                                <span>نقاط XP</span>
+                            </div>
+                            <div class="stat">
+                                <strong>🔥 @c.CurrentStreak</strong>
+                                <span>يوم متواصل</span>
+                            </div>
+                            <div class="stat">
+                                <strong>@c.AccessibleCoursesCount</strong>
+                                <span>دورة متاحة</span>
+                            </div>
+                            <div class="stat">
+                                <strong>@RelationLabel(c.Relation)</strong>
+                                <span>علاقتك</span>
+                            </div>
+                        </div>
+
+                        <div class="child-footer">
+                            <small class="fs-text-subtle">📱 @c.Phone</small>
+                            <a href="/parent/child/@c.StudentId" class="fs-btn fs-btn-primary fs-btn-sm">
+                                التفاصيل ←
+                            </a>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+
+        @if (_showAdd)
+        {
+            <div class="modal-backdrop" @onclick="() => _showAdd = false">
+                <div class="modal fs-card fs-card-elevated" @onclick:stopPropagation="true">
+                    <h3>إضافة ابن جديد</h3>
+                    <p class="fs-text-muted">أدخل رقم هاتف الطالب المُسجّل على المنصة</p>
+
+                    @if (!string.IsNullOrEmpty(_addError))
+                    {
+                        <div class="fs-alert fs-alert-error"><span>⚠️</span><span>@_addError</span></div>
+                    }
+
+                    <div class="fs-form-group">
+                        <label class="fs-label">رقم هاتف الطالب</label>
+                        <input class="fs-input fs-input-phone" @bind="_newStudentPhone" placeholder="+201012345678" />
+                    </div>
+
+                    <div class="fs-form-group">
+                        <label class="fs-label">العلاقة</label>
+                        <select class="fs-select" @bind="_newRelation">
+                            <option value="Father">أب</option>
+                            <option value="Mother">أم</option>
+                            <option value="Guardian">ولي أمر</option>
+                        </select>
+                    </div>
+
+                    <div class="modal-actions">
+                        <button class="fs-btn fs-btn-outline" @onclick="() => _showAdd = false" disabled="@_adding">إلغاء</button>
+                        <button class="fs-btn fs-btn-primary" @onclick="LinkChild" disabled="@_adding">
+                            @if (_adding) { <span class="fs-spinner"></span> }
+                            ربط الابن
+                        </button>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .parent-page { padding: var(--fs-s-10) 0; min-height: calc(100vh - 72px); }
+    .parent-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--fs-s-6); flex-wrap: wrap; gap: var(--fs-s-3); }
+    .parent-head h1 { font-size: 28px; margin-bottom: var(--fs-s-1); }
+    .empty { padding: 80px; text-align: center; }
+
+    .digest-card {
+        display: flex; align-items: center; gap: var(--fs-s-3);
+        background: linear-gradient(135deg, var(--fs-primary-soft), white);
+        border: 1px solid var(--fs-primary);
+        border-radius: var(--fs-r-xl);
+        padding: var(--fs-s-4);
+        margin-bottom: var(--fs-s-5);
+    }
+    .digest-icon { font-size: 32px; flex-shrink: 0; }
+    .digest-body { flex: 1; }
+    .digest-body strong { display: block; font-size: 15px; margin-bottom: 2px; }
+    .digest-body small { color: var(--fs-text-muted); font-size: 13px; line-height: 1.5; }
+    .digest-actions { display: flex; gap: var(--fs-s-2); flex-shrink: 0; }
+    @@media (max-width: 600px) {
+        .digest-card { flex-direction: column; text-align: center; }
+        .digest-actions { width: 100%; justify-content: center; }
+    }
+
+    .summary-row {
+        display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--fs-s-4);
+        margin-bottom: var(--fs-s-6);
+    }
+    @@media (max-width: 700px) { .summary-row { grid-template-columns: 1fr; } }
+    .summary-card {
+        background: var(--fs-surface); border: 1px solid var(--fs-border);
+        border-radius: var(--fs-r-md); padding: var(--fs-s-4);
+        display: flex; align-items: center; gap: var(--fs-s-3);
+    }
+    .summary-icon { font-size: 32px; }
+    .summary-card strong { display: block; font-size: 22px; font-weight: 800; color: var(--fs-primary); }
+    .summary-card small { font-size: 12px; color: var(--fs-text-muted); }
+
+    .child-card { display: flex; flex-direction: column; gap: var(--fs-s-4); }
+    .child-head { display: flex; align-items: center; gap: var(--fs-s-3); }
+    .child-info { flex: 1; }
+    .child-head h3 { margin: 0; font-size: 18px; }
+    .child-head p { margin: 0; font-size: 13px; color: var(--fs-text-muted); }
+    .avatar {
+        width: 56px; height: 56px; border-radius: 50%;
+        background: linear-gradient(135deg, var(--fs-primary), var(--fs-secondary));
+        color: white; font-weight: 800; font-size: 24px;
+        display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+
+    .sub-banner {
+        padding: var(--fs-s-3); border-radius: var(--fs-r-md);
+        display: flex; justify-content: space-between; align-items: center;
+        font-size: 13px; font-weight: 600;
+    }
+    .sub-banner.active { background: #D1FAE5; color: var(--fs-success); }
+    .sub-banner.active small { color: var(--fs-success); font-size: 12px; }
+    .sub-banner.inactive { background: #FEE2E2; color: var(--fs-danger); }
+    .sub-banner.inactive a { color: var(--fs-danger); font-weight: 700; text-decoration: underline; }
+
+    .child-stats {
+        display: grid; grid-template-columns: repeat(4, 1fr);
+        padding: var(--fs-s-3) 0; border-top: 1px solid var(--fs-border); border-bottom: 1px solid var(--fs-border);
+        gap: var(--fs-s-2);
+    }
+    @@media (max-width: 600px) { .child-stats { grid-template-columns: repeat(2, 1fr); } }
+    .stat { text-align: center; }
+    .stat strong { display: block; font-size: 16px; font-weight: 800; color: var(--fs-primary); }
+    .stat span { font-size: 11px; color: var(--fs-text-muted); }
+
+    .child-footer { display: flex; justify-content: space-between; align-items: center; gap: var(--fs-s-2); flex-wrap: wrap; }
+    .child-footer small { direction: ltr; }
+
+    .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; padding: var(--fs-s-4); z-index: 100; backdrop-filter: blur(4px); }
+    .modal { max-width: 480px; width: 100%; }
+    .modal-actions { display: flex; gap: var(--fs-s-2); justify-content: flex-end; margin-top: var(--fs-s-4); }
+</style>
+
+@code {
+    private FSEdu.Shared.Contracts.Dashboard.ParentDashboardDto? _data;
+    private bool _loaded;
+    private bool _showAdd;
+    private bool _adding;
+    private string _newStudentPhone = "";
+    private string _newRelation = "Father";
+    private string? _addError;
+
+    private bool _digestEnabled;
+    private DateTime? _lastDigestUtc;
+    private bool _digestBusy;
+    private bool _digestSent;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            await Load();
+            var (enabled, last) = await Api.GetParentDigestStatusAsync();
+            _digestEnabled = enabled; _lastDigestUtc = last;
+            StateHasChanged();
+        }
+    }
+
+    private async Task Load()
+    {
+        if (!Auth.IsAuthenticated || !Auth.IsInRole("Parent")) { _loaded = true; StateHasChanged(); return; }
+        try { _data = await Api.GetParentDashboardAsync(); }
+        catch { _data = null; }
+        _loaded = true; StateHasChanged();
+    }
+
+    private async Task ToggleDigest()
+    {
+        _digestBusy = true; StateHasChanged();
+        try
+        {
+            var ok = await Api.ToggleParentDigestAsync(!_digestEnabled);
+            if (ok) _digestEnabled = !_digestEnabled;
+        }
+        finally { _digestBusy = false; StateHasChanged(); }
+    }
+
+    private async Task SendDigestNow()
+    {
+        _digestBusy = true; StateHasChanged();
+        try
+        {
+            var ok = await Api.SendParentDigestNowAsync();
+            if (ok)
+            {
+                _digestSent = true; _lastDigestUtc = DateTime.UtcNow;
+                StateHasChanged();
+                await Task.Delay(2000);
+                _digestSent = false;
+            }
+        }
+        finally { _digestBusy = false; StateHasChanged(); }
+    }
+
+    private async Task LinkChild()
+    {
+        _addError = null; _adding = true;
+        try
+        {
+            var (ok, err) = await Api.LinkChildAsync(_newStudentPhone, _newRelation);
+            if (!ok) { _addError = err?.Message ?? "خطأ غير معروف"; return; }
+            _showAdd = false; _newStudentPhone = "";
+            await Load();
+        }
+        finally { _adding = false; }
+    }
+
+    private static string RelationLabel(string r) => r switch
+    {
+        "Father" => "أب", "Mother" => "أم", "Guardian" => "ولي", _ => r
+    };
+}

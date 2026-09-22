@@ -1,0 +1,145 @@
+@page "/admin"
+@page "/admin/dashboard"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.AuthState Auth
+
+<PageTitle>لوحة الإدارة — FSEdu</PageTitle>
+
+<div class="admin-page">
+    <div class="fs-container">
+        @if (!_loaded)
+        {
+            <div class="fs-center" style="padding: 80px;"><span class="fs-spinner"></span></div>
+        }
+        else if (!Auth.IsAuthenticated || !Auth.IsInRole("Admin"))
+        {
+            <div class="fs-alert fs-alert-error">
+                🔐 هذه الصفحة للمشرفين الإداريين فقط. <a href="/login">تسجيل الدخول</a>
+            </div>
+        }
+        else
+        {
+            <div class="welcome-bar">
+                <div>
+                    <h1>⚙️ لوحة تحكم الإدارة</h1>
+                    <p class="fs-text-muted">مرحبًا @Auth.CurrentUser?.FullName — إدارة شاملة للمنصة</p>
+                </div>
+            </div>
+
+            <div class="fs-grid fs-grid-4 kpi-row">
+                <div class="fs-card kpi-card">
+                    <span class="kpi-icon" style="background: var(--fs-primary-soft); color: var(--fs-primary);">🎓</span>
+                    <div><strong class="kpi-value">0</strong><span class="kpi-label">طلاب</span></div>
+                </div>
+                <div class="fs-card kpi-card">
+                    <span class="kpi-icon" style="background: var(--fs-secondary-soft); color: var(--fs-secondary);">👨‍👩‍👦</span>
+                    <div><strong class="kpi-value">0</strong><span class="kpi-label">أولياء أمور</span></div>
+                </div>
+                <div class="fs-card kpi-card">
+                    <span class="kpi-icon" style="background: var(--fs-accent-soft); color: #B56E00;">👨‍🏫</span>
+                    <div><strong class="kpi-value">0</strong><span class="kpi-label">مدرسون</span></div>
+                </div>
+                <div class="fs-card kpi-card">
+                    <span class="kpi-icon" style="background: #FEE; color: var(--fs-danger);">⏳</span>
+                    <div><strong class="kpi-value">—</strong><span class="kpi-label">طلبات معلّقة</span></div>
+                </div>
+            </div>
+
+            <h2 style="margin: var(--fs-s-10) 0 var(--fs-s-5);">⚡ إجراءات سريعة</h2>
+
+            <div class="fs-grid fs-grid-3">
+                <a href="/admin/teachers/pending" class="fs-card fs-card-hover admin-link">
+                    <div class="link-icon" style="background: var(--fs-primary-soft); color: var(--fs-primary);">👨‍🏫</div>
+                    <h3>مراجعة المدرسين</h3>
+                    <p class="fs-text-muted">اعتماد أو رفض طلبات انضمام المدرسين</p>
+                    <span class="link-arrow">←</span>
+                </a>
+
+                <div class="fs-card admin-link disabled">
+                    <div class="link-icon" style="background: var(--fs-secondary-soft); color: var(--fs-secondary);">🎓</div>
+                    <h3>إدارة الطلاب</h3>
+                    <p class="fs-text-muted">استعراض وإدارة حسابات الطلاب</p>
+                    <span class="coming-soon">قريباً</span>
+                </div>
+
+                <div class="fs-card admin-link disabled">
+                    <div class="link-icon" style="background: var(--fs-accent-soft); color: #B56E00;">💳</div>
+                    <h3>الاشتراكات والمدفوعات</h3>
+                    <p class="fs-text-muted">مراقبة الاشتراكات والمدفوعات</p>
+                    <span class="coming-soon">قريباً</span>
+                </div>
+
+                <div class="fs-card admin-link disabled">
+                    <div class="link-icon" style="background: #E0FAF4; color: var(--fs-success);">📊</div>
+                    <h3>التقارير والإحصائيات</h3>
+                    <p class="fs-text-muted">تقارير مالية وأكاديمية ومحرّكات نمو</p>
+                    <span class="coming-soon">قريباً</span>
+                </div>
+
+                <div class="fs-card admin-link disabled">
+                    <div class="link-icon" style="background: #EBF5FF; color: var(--fs-info);">📚</div>
+                    <h3>إدارة المحتوى</h3>
+                    <p class="fs-text-muted">المراحل والمواد والمذكرات</p>
+                    <span class="coming-soon">قريباً</span>
+                </div>
+
+                <div class="fs-card admin-link disabled">
+                    <div class="link-icon" style="background: #FEE; color: var(--fs-danger);">🎫</div>
+                    <h3>الدعم الفني</h3>
+                    <p class="fs-text-muted">تذاكر وأسئلة المستخدمين</p>
+                    <span class="coming-soon">قريباً</span>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .admin-page { padding: var(--fs-s-12) 0; min-height: calc(100vh - 72px); }
+    .welcome-bar { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: var(--fs-s-8); flex-wrap: wrap; gap: var(--fs-s-4); }
+    .welcome-bar h1 { font-size: 28px; margin-bottom: var(--fs-s-1); }
+    .kpi-row { }
+    .kpi-card { display: flex; align-items: center; gap: var(--fs-s-4); }
+    .kpi-icon { width: 48px; height: 48px; border-radius: var(--fs-r-md); display: flex; align-items: center; justify-content: center; font-size: 24px; flex-shrink: 0; }
+    .kpi-value { display: block; font-size: 24px; font-weight: 800; line-height: 1; margin-bottom: 2px; }
+    .kpi-label { font-size: 13px; color: var(--fs-text-muted); }
+
+    .admin-link {
+        position: relative;
+        text-decoration: none;
+        color: inherit;
+        display: flex;
+        flex-direction: column;
+        gap: var(--fs-s-2);
+        transition: all var(--fs-trans);
+    }
+    .admin-link h3 { margin: 0; font-size: 17px; }
+    .admin-link p { margin: 0; font-size: 13px; }
+    .admin-link.disabled { opacity: 0.65; cursor: not-allowed; }
+    .link-icon { width: 48px; height: 48px; border-radius: var(--fs-r-md); display: flex; align-items: center; justify-content: center; font-size: 24px; }
+    .link-arrow {
+        position: absolute; bottom: var(--fs-s-4); left: var(--fs-s-4);
+        color: var(--fs-primary); font-weight: 700; opacity: 0;
+        transition: opacity var(--fs-trans);
+    }
+    .admin-link:not(.disabled):hover .link-arrow { opacity: 1; }
+    .coming-soon {
+        position: absolute; top: var(--fs-s-3); left: var(--fs-s-3);
+        font-size: 11px; color: var(--fs-text-subtle);
+        background: var(--fs-border-soft); padding: 2px 8px; border-radius: var(--fs-r-full);
+    }
+</style>
+
+@code {
+    private bool _loaded;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            _loaded = true;
+            StateHasChanged();
+        }
+    }
+}

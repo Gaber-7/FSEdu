@@ -1,0 +1,230 @@
+@page "/assessments/{AssessmentId:guid}/take"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject NavigationManager Nav
+
+<PageTitle>بدء الاختبار</PageTitle>
+
+<div class="take-page">
+    <div class="fs-container">
+        @if (!_loaded)
+        {
+            <div class="fs-center" style="padding:80px"><span class="fs-spinner"></span></div>
+        }
+        else if (!Auth.IsAuthenticated)
+        {
+            <div class="fs-alert fs-alert-error">يجب تسجيل الدخول. <a href="/login">تسجيل الدخول</a></div>
+        }
+        else if (_error is not null)
+        {
+            <div class="fs-alert fs-alert-error"><span>⚠️</span><span>@_error</span></div>
+            <a href="/" class="fs-btn fs-btn-outline">← العودة للرئيسية</a>
+        }
+        else if (_attempt is not null)
+        {
+            <div class="take-head">
+                <div>
+                    <h1>@_attempt.AssessmentTitle</h1>
+                    <p class="fs-text-muted">
+                        @_attempt.Questions.Length سؤال · @_attempt.TotalMarks درجة
+                    </p>
+                </div>
+                @if (_attempt.DeadlineAtUtc is not null)
+                {
+                    <div class="timer-box">
+                        <span class="timer-label">⏱ الوقت المتبقي</span>
+                        <strong class="timer">@_timerDisplay</strong>
+                    </div>
+                }
+            </div>
+
+            <div class="progress-bar">
+                <div class="progress-fill" style="width: @AnsweredPercent%"></div>
+            </div>
+            <small class="progress-text">
+                تمت الإجابة على @_answers.Count من @_attempt.Questions.Length
+            </small>
+
+            <div class="questions">
+                @foreach (var q in _attempt.Questions)
+                {
+                    <div class="question-card fs-card">
+                        <div class="q-header">
+                            <span class="q-num">@q.OrderNum</span>
+                            <div class="q-text">
+                                <strong>@q.QuestionText</strong>
+                                <small>@q.Marks درجة</small>
+                            </div>
+                        </div>
+
+                        @if (q.Type == "MultipleChoice" && q.Options is not null)
+                        {
+                            <div class="options">
+                                @for (var i = 0; i < q.Options.Length; i++)
+                                {
+                                    var idx = i;
+                                    var qId = q.Id;
+                                    var isSelected = _answers.TryGetValue(qId, out var a) && a.SelectedOptionIndex == idx;
+                                    <label class="option-label @(isSelected ? "selected" : "")">
+                                        <input type="radio" name="@qId"
+                                               checked="@isSelected"
+                                               @onchange="@(() => SetMcqAnswer(qId, idx))" />
+                                        <span class="option-text">@q.Options[idx]</span>
+                                    </label>
+                                }
+                            </div>
+                        }
+                        else if (q.Type == "TrueFalse")
+                        {
+                            var qId = q.Id;
+                            var sel = _answers.TryGetValue(qId, out var a) ? a.SelectedBoolean : null;
+                            <div class="tf-buttons">
+                                <button class="tf-btn @(sel == true ? "active-true" : "")"
+                                        @onclick="@(() => SetTfAnswer(qId, true))">✓ صح</button>
+                                <button class="tf-btn @(sel == false ? "active-false" : "")"
+                                        @onclick="@(() => SetTfAnswer(qId, false))">✗ خطأ</button>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+
+            <div class="submit-bar">
+                <button class="fs-btn fs-btn-primary fs-btn-lg" @onclick="Submit" disabled="@_submitting">
+                    @if (_submitting) { <span class="fs-spinner"></span><span>جارٍ التقديم...</span> }
+                    else { <span>📤 تقديم الاختبار</span> }
+                </button>
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .take-page { padding: var(--fs-s-8) 0; min-height: calc(100vh - 72px); background: var(--fs-bg); }
+    .take-head { display: flex; justify-content: space-between; align-items: start; margin-bottom: var(--fs-s-6); flex-wrap: wrap; gap: var(--fs-s-3); }
+    .take-head h1 { font-size: 26px; margin-bottom: var(--fs-s-1); }
+    .timer-box { background: var(--fs-surface); border: 1px solid var(--fs-border); padding: var(--fs-s-3) var(--fs-s-4); border-radius: var(--fs-r-lg); text-align: center; min-width: 180px; }
+    .timer-label { font-size: 12px; color: var(--fs-text-muted); display: block; }
+    .timer { font-size: 24px; font-weight: 800; color: var(--fs-primary); font-variant-numeric: tabular-nums; direction: ltr; display: block; }
+
+    .progress-bar { height: 8px; background: var(--fs-border); border-radius: var(--fs-r-full); overflow: hidden; margin-bottom: var(--fs-s-1); }
+    .progress-fill { height: 100%; background: linear-gradient(90deg, var(--fs-primary), var(--fs-secondary)); transition: width var(--fs-trans); }
+    .progress-text { display: block; text-align: center; margin-bottom: var(--fs-s-6); color: var(--fs-text-muted); font-size: 13px; }
+
+    .questions { display: flex; flex-direction: column; gap: var(--fs-s-4); margin-bottom: var(--fs-s-8); }
+    .question-card { padding: var(--fs-s-5); }
+    .q-header { display: flex; align-items: start; gap: var(--fs-s-3); margin-bottom: var(--fs-s-4); }
+    .q-num { width: 36px; height: 36px; border-radius: 50%; background: var(--fs-primary); color: white; display: flex; align-items: center; justify-content: center; font-weight: 800; flex-shrink: 0; }
+    .q-text { flex: 1; }
+    .q-text strong { display: block; font-size: 16px; margin-bottom: 4px; line-height: 1.5; }
+    .q-text small { color: var(--fs-text-muted); font-size: 12px; }
+
+    .options { display: flex; flex-direction: column; gap: var(--fs-s-2); padding-right: 48px; }
+    .option-label {
+        display: flex; align-items: center; gap: var(--fs-s-3);
+        padding: var(--fs-s-3) var(--fs-s-4);
+        background: var(--fs-bg); border: 2px solid var(--fs-border);
+        border-radius: var(--fs-r-md); cursor: pointer;
+        transition: all var(--fs-trans);
+    }
+    .option-label:hover { border-color: var(--fs-primary); }
+    .option-label.selected { border-color: var(--fs-primary); background: var(--fs-primary-soft); }
+    .option-label input[type="radio"] { width: 20px; height: 20px; }
+    .option-text { flex: 1; font-size: 15px; }
+
+    .tf-buttons { display: flex; gap: var(--fs-s-3); padding-right: 48px; }
+    .tf-btn { flex: 1; padding: var(--fs-s-5); background: var(--fs-bg); border: 2px solid var(--fs-border); border-radius: var(--fs-r-md); font-weight: 700; font-size: 18px; cursor: pointer; transition: all var(--fs-trans); }
+    .tf-btn.active-true { border-color: var(--fs-success); background: #D1FAE5; color: var(--fs-success); }
+    .tf-btn.active-false { border-color: var(--fs-danger); background: #FEE2E2; color: var(--fs-danger); }
+
+    .submit-bar { text-align: center; padding: var(--fs-s-6) 0; }
+    .submit-bar .fs-btn { min-width: 280px; }
+</style>
+
+@code {
+    [Parameter] public Guid AssessmentId { get; set; }
+
+    private FSEdu.Shared.Contracts.Assessments.StartAttemptResponse? _attempt;
+    private readonly Dictionary<Guid, FSEdu.Shared.Contracts.Assessments.AnswerDto> _answers = new();
+    private bool _loaded;
+    private string? _error;
+    private bool _submitting;
+    private string _timerDisplay = "--:--";
+    private Timer? _timer;
+
+    private double AnsweredPercent =>
+        _attempt is null || _attempt.Questions.Length == 0 ? 0
+        : Math.Round(_answers.Count * 100.0 / _attempt.Questions.Length);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            if (!Auth.IsAuthenticated) { _loaded = true; StateHasChanged(); return; }
+
+            var (data, err) = await Api.StartAttemptAsync(AssessmentId);
+            if (err is not null) { _error = err.Message; _loaded = true; StateHasChanged(); return; }
+            _attempt = data;
+            _loaded = true;
+            StartTimer();
+            StateHasChanged();
+        }
+    }
+
+    private void StartTimer()
+    {
+        if (_attempt?.DeadlineAtUtc is null) return;
+
+        UpdateTimer();
+        _timer = new Timer(_ =>
+        {
+            InvokeAsync(() =>
+            {
+                UpdateTimer();
+                StateHasChanged();
+                if (_timerExpired && !_submitting)
+                    _ = Submit();
+            });
+        }, null, 1000, 1000);
+    }
+
+    private bool _timerExpired;
+    private void UpdateTimer()
+    {
+        if (_attempt?.DeadlineAtUtc is null) return;
+        var remaining = _attempt.DeadlineAtUtc.Value - DateTime.UtcNow;
+        if (remaining.TotalSeconds <= 0)
+        {
+            _timerDisplay = "00:00";
+            _timerExpired = true;
+        }
+        else
+        {
+            _timerDisplay = $"{(int)remaining.TotalMinutes:D2}:{remaining.Seconds:D2}";
+        }
+    }
+
+    private void SetMcqAnswer(Guid qId, int idx) =>
+        _answers[qId] = new FSEdu.Shared.Contracts.Assessments.AnswerDto(qId, idx, null, null);
+
+    private void SetTfAnswer(Guid qId, bool value) =>
+        _answers[qId] = new FSEdu.Shared.Contracts.Assessments.AnswerDto(qId, null, value, null);
+
+    private async Task Submit()
+    {
+        if (_attempt is null || _submitting) return;
+        _submitting = true; _timer?.Dispose();
+        try
+        {
+            var req = new FSEdu.Shared.Contracts.Assessments.SubmitAttemptRequest(_answers.Values.ToArray());
+            var (result, err) = await Api.SubmitAttemptAsync(_attempt.AttemptId, req);
+            if (err is not null) { _error = err.Message; return; }
+            Nav.NavigateTo($"/attempts/{_attempt.AttemptId}/result");
+        }
+        finally { _submitting = false; }
+    }
+
+    public void Dispose() => _timer?.Dispose();
+}

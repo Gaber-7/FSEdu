@@ -1,0 +1,164 @@
+@page "/my/certificates"
+@using FSEdu.Shared.Contracts.Courses
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject NavigationManager Nav
+@rendermode InteractiveServer
+
+<PageTitle>شهاداتي - FSEdu</PageTitle>
+
+<div class="certs-page fs-container">
+    <div class="page-head">
+        <h1>🎓 شهاداتي</h1>
+        <p class="fs-text-muted">جميع الشهادات التي حصلت عليها بإكمال الدورات</p>
+    </div>
+
+    @if (!_loaded)
+    {
+        <div class="fs-loading"><span class="fs-spinner"></span><span>جارٍ التحميل...</span></div>
+    }
+    else if (_certs.Count == 0)
+    {
+        <div class="empty">
+            <div class="empty-icon">📜</div>
+            <h2>لم تحصل على شهادات بعد</h2>
+            <p>أكمل دورة كاملة (100% من الدروس) لتحصل على شهادة موثّقة.</p>
+            <a href="/courses" class="fs-btn fs-btn-primary">تصفّح الدورات</a>
+        </div>
+    }
+    else
+    {
+        <div class="kpi-row">
+            <div class="kpi">
+                <span class="kpi-val">@_certs.Count</span>
+                <span class="kpi-lbl">شهادة</span>
+            </div>
+            <div class="kpi">
+                <span class="kpi-val">@_certs.Select(c => c.SubjectName).Distinct().Count()</span>
+                <span class="kpi-lbl">مادة</span>
+            </div>
+            <div class="kpi">
+                <span class="kpi-val">@(_certs.Count == 0 ? 0 : (int)_certs.Average(c => c.FinalGrade))%</span>
+                <span class="kpi-lbl">متوسط الإنجاز</span>
+            </div>
+        </div>
+
+        <div class="cert-grid">
+            @foreach (var c in _certs)
+            {
+                <div class="cert-card" style="--accent: @(c.SubjectColor ?? "#6366f1")">
+                    <div class="cert-thumb">
+                        @if (!string.IsNullOrEmpty(c.ThumbnailUrl))
+                        {
+                            <img src="@c.ThumbnailUrl" alt="@c.CourseTitle" />
+                        }
+                        else
+                        {
+                            <div class="placeholder">📚</div>
+                        }
+                        <span class="cert-badge">🎓</span>
+                    </div>
+                    <div class="cert-body">
+                        <span class="subject-chip">@c.SubjectName</span>
+                        <h3>@c.CourseTitle</h3>
+                        <div class="cert-meta">
+                            <small>الشهادة رقم: <strong>@c.CertificateNumber</strong></small>
+                            <small>تاريخ المنح: @c.IssuedAtUtc.ToLocalTime().ToString("yyyy/MM/dd")</small>
+                        </div>
+                        <a href="/certificate/@c.CourseId" class="fs-btn fs-btn-primary fs-btn-block">
+                            عرض الشهادة ←
+                        </a>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<style>
+    .certs-page { min-height: calc(100vh - 72px); padding: var(--fs-s-8) 0; }
+    .page-head { margin-bottom: var(--fs-s-6); }
+    .page-head h1 { margin: 0 0 var(--fs-s-2); }
+
+    .empty {
+        text-align: center; padding: var(--fs-s-12) var(--fs-s-4);
+        background: white; border-radius: var(--fs-r-xl);
+        border: 1px solid var(--fs-border);
+    }
+    .empty-icon { font-size: 72px; margin-bottom: var(--fs-s-4); }
+    .empty h2 { margin: 0 0 var(--fs-s-2); }
+    .empty p { color: var(--fs-text-muted); margin-bottom: var(--fs-s-5); }
+
+    .kpi-row {
+        display: grid; grid-template-columns: repeat(3, 1fr);
+        gap: var(--fs-s-4); margin-bottom: var(--fs-s-6);
+    }
+    .kpi {
+        background: white; border: 1px solid var(--fs-border);
+        border-radius: var(--fs-r-lg); padding: var(--fs-s-4);
+        display: flex; flex-direction: column; align-items: center;
+    }
+    .kpi-val { font-size: 28px; font-weight: 800; color: var(--fs-primary); }
+    .kpi-lbl { font-size: 13px; color: var(--fs-text-muted); }
+
+    .cert-grid {
+        display: grid; gap: var(--fs-s-5);
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    }
+    .cert-card {
+        background: white; border: 1px solid var(--fs-border);
+        border-radius: var(--fs-r-xl); overflow: hidden;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.04);
+        transition: all var(--fs-trans);
+        border-top: 4px solid var(--accent);
+    }
+    .cert-card:hover { transform: translateY(-3px); box-shadow: 0 12px 28px rgba(0,0,0,0.1); }
+
+    .cert-thumb { position: relative; aspect-ratio: 16/9; overflow: hidden; background: var(--fs-bg); }
+    .cert-thumb img { width: 100%; height: 100%; object-fit: cover; }
+    .cert-thumb .placeholder {
+        width: 100%; height: 100%;
+        background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 60%, white));
+        display: flex; align-items: center; justify-content: center;
+        font-size: 48px; color: white;
+    }
+    .cert-badge {
+        position: absolute; top: 10px; inset-inline-end: 10px;
+        background: rgba(255,255,255,0.95); padding: 6px 10px;
+        border-radius: var(--fs-r-full); font-size: 20px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    }
+
+    .cert-body { padding: var(--fs-s-4); display: flex; flex-direction: column; gap: var(--fs-s-3); }
+    .subject-chip {
+        display: inline-block; padding: 3px 10px; border-radius: var(--fs-r-full);
+        background: color-mix(in srgb, var(--accent) 15%, white);
+        color: var(--accent); font-weight: 700; font-size: 12px;
+        align-self: flex-start;
+    }
+    .cert-body h3 { margin: 0; font-size: 16px; line-height: 1.4; }
+    .cert-meta { display: flex; flex-direction: column; gap: 4px; }
+    .cert-meta small { color: var(--fs-text-muted); font-size: 12px; }
+    .cert-meta strong { color: var(--fs-text); }
+</style>
+
+@code {
+    private List<MyCertificateRowDto> _certs = new();
+    private bool _loaded;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            if (!Auth.IsInRole("Student"))
+            {
+                Nav.NavigateTo("/login");
+                return;
+            }
+            _certs = await Api.GetMyCertificatesAsync();
+            _loaded = true;
+            StateHasChanged();
+        }
+    }
+}

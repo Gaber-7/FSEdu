@@ -1,0 +1,49 @@
+{
+    "name": "FSEdu - منصة التعليم الذكي",
+    "short_name": "FSEdu",
+    "description": "منصة تعليمية ذكية للتعليم عن بُعد للطلاب في المراحل الابتدائية والإعدادية",
+    "lang": "ar",
+    "dir": "rtl",
+    "start_url": "/",
+    "display": "standalone",
+    "orientation": "portrait-primary",
+    "background_color": "#FAFBFF",
+    "theme_color": "#5B4FE5",
+    "scope": "/",
+    "categories": ["education", "productivity"],
+    "icons": [
+        {
+            "src": "favicon.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any"
+        },
+        {
+            "src": "favicon.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
+        }
+    ],
+    "shortcuts": [
+        {
+            "name": "لوحة الطالب",
+            "short_name": "لوحتي",
+            "url": "/dashboard/student",
+            "icons": [{ "src": "favicon.png", "sizes": "192x192" }]
+        },
+        {
+            "name": "الدورات",
+            "short_name": "دورات",
+            "url": "/courses",
+            "icons": [{ "src": "favicon.png", "sizes": "192x192" }]
+        },
+        {
+            "name": "جدولي",
+            "short_name": "جدول",
+            "url": "/student/schedule",
+            "icons": [{ "src": "favicon.png", "sizes": "192x192" }]
+        }
+    ],
+    "prefer_related_applications": false
+}

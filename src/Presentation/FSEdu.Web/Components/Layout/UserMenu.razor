@@ -1,0 +1,721 @@
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.AuthState Auth
+@inject NavigationManager Nav
+@inject IConfiguration Config
+@inject IJSRuntime JS
+@implements IDisposable
+
+@if (!_ready)
+{
+    <div class="um-loading"><span class="fs-spinner"></span></div>
+}
+else if (!Auth.IsAuthenticated)
+{
+    <div class="um-guest">
+        <a href="/login" class="fs-btn fs-btn-ghost fs-btn-sm">دخول</a>
+        <a href="/register" class="fs-btn fs-btn-primary fs-btn-sm">ابدأ مجاناً</a>
+    </div>
+}
+else
+{
+    <div class="um-wrapper" @onclick="CloseAllMenus">
+        @* Hamburger (mobile only) *@
+        <button class="um-hamburger" @onclick:stopPropagation="true" @onclick="ToggleDrawer" aria-label="القائمة">
+            <span></span><span></span><span></span>
+        </button>
+
+        @* Universal search *@
+        <a href="/search" class="um-icon-btn" title="بحث">🔍</a>
+
+        @* Theme toggle *@
+        <button class="um-icon-btn" type="button" title="تبديل الوضع الليلي"
+                @onclick:stopPropagation="true"
+                @onclick="ToggleTheme">@(_isDark ? "☀️" : "🌙")</button>
+
+        @* Language toggle *@
+        <a class="um-icon-btn um-lang-btn" title="@(_isArabic ? "Switch to English" : "العربية")"
+           href="@LangToggleUrl()">
+            <strong>@(_isArabic ? "EN" : "ع")</strong>
+        </a>
+
+        @* Install app prompt — visible only when the browser exposes it *@
+        @if (_canInstall)
+        {
+            <button class="um-icon-btn um-install-btn" type="button" title="تثبيت التطبيق"
+                    @onclick:stopPropagation="true"
+                    @onclick="InstallApp">⬇</button>
+        }
+
+        @* Role-specific nav links *@
+        <nav class="um-role-nav" @onclick:stopPropagation="true">
+            @if (Auth.IsInRole("Admin"))
+            {
+                <a href="/admin/dashboard" class="um-link @ActiveIfStartsWith("/admin/dashboard")">
+                    <span class="um-link-icon">⚙️</span> اللوحة
+                </a>
+                @* Reviews dropdown *@
+                <div class="um-menu @(_openMenu == "admin-reviews" ? "open" : "")">
+                    <button class="um-link um-trigger" @onclick='() => Toggle("admin-reviews")'>
+                        <span class="um-link-icon">📋</span> المراجعات <span class="um-caret">▾</span>
+                    </button>
+                    <div class="um-panel">
+                        <a href="/admin/teachers/pending" class="um-pi"><span>👨‍🏫</span><div><strong>المدرسون</strong><small>طلبات اعتماد جديدة</small></div></a>
+                        <a href="/admin/courses/pending" class="um-pi"><span>📚</span><div><strong>الدورات</strong><small>دورات بانتظار النشر</small></div></a>
+                        <a href="/admin/payments/pending" class="um-pi"><span>💳</span><div><strong>المدفوعات</strong><small>إيصالات بانتظار التحقق</small></div></a>
+                    </div>
+                </div>
+                @* Operations dropdown *@
+                <div class="um-menu @(_openMenu == "admin-ops" ? "open" : "")">
+                    <button class="um-link um-trigger" @onclick='() => Toggle("admin-ops")'>
+                        <span class="um-link-icon">🛠️</span> العمليات <span class="um-caret">▾</span>
+                    </button>
+                    <div class="um-panel">
+                        <a href="/admin/coupons" class="um-pi"><span>🏷️</span><div><strong>الكوبونات</strong><small>إنشاء وإدارة كوبونات الخصم</small></div></a>
+                        <a href="/admin/campaigns" class="um-pi"><span>🎉</span><div><strong>حملات الخصم</strong><small>خصومات تلقائية موسمية</small></div></a>
+                        <a href="/admin/discount-rules" class="um-pi"><span>🎁</span><div><strong>قواعد الخصم</strong><small>إخوة، متعدّد مواد، متفوّقين...</small></div></a>
+                        <a href="/admin/broadcast" class="um-pi"><span>📣</span><div><strong>بثّ إشعار</strong><small>رسالة لجميع المستخدمين</small></div></a>
+                        <a href="/staff/tickets" class="um-pi"><span>📨</span><div><strong>الأسئلة والتذاكر</strong><small>صندوق الدعم</small></div></a>
+                        <a href="/admin/audit-log" class="um-pi"><span>📋</span><div><strong>سجلّ التدقيق</strong><small>تاريخ كل العمليات الإدارية</small></div></a>
+                    </div>
+                </div>
+            }
+            else if (Auth.IsInRole("Teacher"))
+            {
+                <a href="/dashboard/teacher" class="um-link @ActiveIfStartsWith("/dashboard/teacher")">
+                    <span class="um-link-icon">🏠</span> لوحتي
+                </a>
+                <a href="/teacher/courses" class="um-link @ActiveIfStartsWith("/teacher/courses")">
+                    <span class="um-link-icon">📚</span> دوراتي
+                </a>
+                @* Teaching dropdown *@
+                <div class="um-menu @(_openMenu == "teacher-teaching" ? "open" : "")">
+                    <button class="um-link um-trigger" @onclick='() => Toggle("teacher-teaching")'>
+                        <span class="um-link-icon">🎓</span> التدريس <span class="um-caret">▾</span>
+                    </button>
+                    <div class="um-panel">
+                        <a href="/teacher/live" class="um-pi"><span>🎥</span><div><strong>البثّ المباشر</strong><small>جدولة وإدارة الحصص</small></div></a>
+                        <a href="/teacher/homework" class="um-pi"><span>📋</span><div><strong>الواجبات</strong><small>إنشاء واجبات وتصحيحها</small></div></a>
+                        <a href="/teacher/qa-inbox" class="um-pi"><span>📨</span><div><strong>صندوق الأسئلة</strong><small>أسئلة الطلاب على دروسك</small></div></a>
+                        <a href="/staff/tickets" class="um-pi"><span>💬</span><div><strong>التذاكر</strong><small>طلبات الدعم المُحالة لك</small></div></a>
+                    </div>
+                </div>
+            }
+            else if (Auth.IsInRole("Parent"))
+            {
+                <a href="/parent/children" class="um-link @ActiveIfStartsWith("/parent/children")">
+                    <span class="um-link-icon">👨‍👩‍👦</span> أبنائي
+                </a>
+                <a href="/courses" class="um-link @ActiveIfStartsWith("/courses")">
+                    <span class="um-link-icon">📚</span> الدورات
+                </a>
+            }
+            else if (Auth.IsInRole("Student"))
+            {
+                <a href="/dashboard/student" class="um-link @ActiveIfStartsWith("/dashboard/student")">
+                    <span class="um-link-icon">🏠</span> لوحتي
+                </a>
+                <a href="/courses" class="um-link @ActiveIfStartsWith("/courses")">
+                    <span class="um-link-icon">📚</span> الدورات
+                </a>
+                @* Learn dropdown *@
+                <div class="um-menu @(_openMenu == "student-learn" ? "open" : "")">
+                    <button class="um-link um-trigger" @onclick='() => Toggle("student-learn")'>
+                        <span class="um-link-icon">🎓</span> تعلّم <span class="um-caret">▾</span>
+                    </button>
+                    <div class="um-panel">
+                        <a href="/student/schedule" class="um-pi"><span>📅</span><div><strong>جدولي</strong><small>الحصص والاختبارات القادمة</small></div></a>
+                        <a href="/student/live" class="um-pi"><span>🎥</span><div><strong>الحصص المباشرة</strong><small>الحصص القادمة الآن</small></div></a>
+                        <a href="/student/recordings" class="um-pi"><span>📼</span><div><strong>التسجيلات</strong><small>الحصص المسجّلة السابقة</small></div></a>
+                        <a href="/student/notes" class="um-pi"><span>📝</span><div><strong>ملاحظاتي</strong><small>كل ملاحظاتي على الدروس</small></div></a>
+                        <a href="/my/homework" class="um-pi"><span>📋</span><div><strong>واجباتى</strong><small>كل الواجبات + التسليم والتصحيح</small></div></a>
+                        <a href="/past-papers" class="um-pi"><span>📚</span><div><strong>الامتحانات السابقة</strong><small>حلّ امتحانات السنين السابقة</small></div></a>
+                        <a href="/student/tickets" class="um-pi"><span>💬</span><div><strong>اسأل مدرس</strong><small>أرسل سؤالًا للدعم</small></div></a>
+                    </div>
+                </div>
+                @* Progress dropdown *@
+                <div class="um-menu @(_openMenu == "student-progress" ? "open" : "")">
+                    <button class="um-link um-trigger" @onclick='() => Toggle("student-progress")'>
+                        <span class="um-link-icon">📈</span> تقدّمي <span class="um-caret">▾</span>
+                    </button>
+                    <div class="um-panel">
+                        <a href="/student/progress" class="um-pi"><span>📈</span><div><strong>تقدّمي</strong><small>نسبة إكمال الدورات</small></div></a>
+                        <a href="/student/stats" class="um-pi"><span>📊</span><div><strong>إحصائياتي التفصيلية</strong><small>دقائق المشاهدة + الأداء</small></div></a>
+                        <a href="/student/activity" class="um-pi"><span>📜</span><div><strong>سجلّ نشاطي</strong><small>كل ما قمت به مرتّبًا</small></div></a>
+                        <a href="/student/achievements" class="um-pi"><span>🏆</span><div><strong>إنجازاتي</strong><small>الشارات وXP والسلسلة</small></div></a>
+                        <a href="/my/certificates" class="um-pi"><span>🎓</span><div><strong>شهاداتي</strong><small>الشهادات المكتسبة من إكمال الدورات</small></div></a>
+                        <a href="/leaderboard" class="um-pi"><span>📊</span><div><strong>المتصدّرون</strong><small>ترتيب الطلاب الأعلى</small></div></a>
+                    </div>
+                </div>
+            }
+        </nav>
+
+        @* Mobile drawer + backdrop *@
+        @if (_drawerOpen)
+        {
+            <div class="um-backdrop" @onclick="CloseDrawer"></div>
+            <aside class="um-drawer" @onclick:stopPropagation="true">
+                <div class="um-drawer-head">
+                    <div class="um-avatar">
+                @if (!string.IsNullOrEmpty(Auth.CurrentUser?.AvatarUrl))
+                {
+                    <img src="@AvatarUrl(Auth.CurrentUser!.AvatarUrl)" alt="" />
+                }
+                else
+                {
+                    @(Auth.CurrentUser?.FullName.FirstOrDefault())
+                }
+            </div>
+                    <div>
+                        <strong>@Auth.CurrentUser?.FullName</strong>
+                        <small class="fs-text-muted">@RoleBadge()</small>
+                    </div>
+                    <button class="um-drawer-close" @onclick="CloseDrawer" aria-label="إغلاق">✕</button>
+                </div>
+                <nav class="um-drawer-nav">
+                    <a href="/search" class="um-drawer-link" @onclick="CloseDrawer">🔍 بحث</a>
+                    @if (Auth.IsInRole("Admin"))
+                    {
+                        <a href="/admin/dashboard" class="um-drawer-link" @onclick="CloseDrawer">⚙️ لوحة الإدارة</a>
+                        <div class="um-drawer-section">المراجعات</div>
+                        <a href="/admin/teachers/pending" class="um-drawer-link" @onclick="CloseDrawer">👨‍🏫 المدرسون</a>
+                        <a href="/admin/courses/pending" class="um-drawer-link" @onclick="CloseDrawer">📚 الدورات</a>
+                        <a href="/admin/payments/pending" class="um-drawer-link" @onclick="CloseDrawer">💳 المدفوعات</a>
+                        <div class="um-drawer-section">العمليات</div>
+                        <a href="/admin/coupons" class="um-drawer-link" @onclick="CloseDrawer">🏷️ الكوبونات</a>
+                        <a href="/admin/campaigns" class="um-drawer-link" @onclick="CloseDrawer">🎉 حملات الخصم</a>
+                        <a href="/admin/broadcast" class="um-drawer-link" @onclick="CloseDrawer">📣 بثّ إشعار</a>
+                        <a href="/staff/tickets" class="um-drawer-link" @onclick="CloseDrawer">📨 الأسئلة</a>
+                    }
+                    else if (Auth.IsInRole("Teacher"))
+                    {
+                        <a href="/dashboard/teacher" class="um-drawer-link" @onclick="CloseDrawer">🏠 لوحتي</a>
+                        <a href="/teacher/courses" class="um-drawer-link" @onclick="CloseDrawer">📚 دوراتي</a>
+                        <div class="um-drawer-section">التدريس</div>
+                        <a href="/teacher/live" class="um-drawer-link" @onclick="CloseDrawer">🎥 البثّ المباشر</a>
+                        <a href="/teacher/homework" class="um-drawer-link" @onclick="CloseDrawer">📋 الواجبات</a>
+                        <a href="/teacher/qa-inbox" class="um-drawer-link" @onclick="CloseDrawer">📨 صندوق الأسئلة</a>
+                        <a href="/staff/tickets" class="um-drawer-link" @onclick="CloseDrawer">💬 التذاكر</a>
+                        <div class="um-drawer-section">حسابي</div>
+                        <a href="/teacher/profile/edit" class="um-drawer-link" @onclick="CloseDrawer">✏️ ملفّي الشخصي</a>
+                    }
+                    else if (Auth.IsInRole("Parent"))
+                    {
+                        <a href="/parent/children" class="um-drawer-link" @onclick="CloseDrawer">👨‍👩‍👦 أبنائي</a>
+                        <a href="/courses" class="um-drawer-link" @onclick="CloseDrawer">📚 الدورات</a>
+                    }
+                    else if (Auth.IsInRole("Student"))
+                    {
+                        <a href="/dashboard/student" class="um-drawer-link" @onclick="CloseDrawer">🏠 لوحتي</a>
+                        <a href="/courses" class="um-drawer-link" @onclick="CloseDrawer">📚 الدورات</a>
+                        <div class="um-drawer-section">تعلّم</div>
+                        <a href="/student/schedule" class="um-drawer-link" @onclick="CloseDrawer">📅 جدولي</a>
+                        <a href="/student/live" class="um-drawer-link" @onclick="CloseDrawer">🎥 الحصص المباشرة</a>
+                        <a href="/student/recordings" class="um-drawer-link" @onclick="CloseDrawer">📼 التسجيلات</a>
+                        <a href="/student/notes" class="um-drawer-link" @onclick="CloseDrawer">📝 ملاحظاتي</a>
+                        <a href="/my/homework" class="um-drawer-link" @onclick="CloseDrawer">📋 واجباتى</a>
+                        <a href="/past-papers" class="um-drawer-link" @onclick="CloseDrawer">📚 الامتحانات السابقة</a>
+                        <a href="/student/tickets" class="um-drawer-link" @onclick="CloseDrawer">💬 اسأل مدرس</a>
+                        <div class="um-drawer-section">تقدّمي</div>
+                        <a href="/student/progress" class="um-drawer-link" @onclick="CloseDrawer">📈 تقدّمي</a>
+                        <a href="/student/activity" class="um-drawer-link" @onclick="CloseDrawer">📜 سجلّ نشاطي</a>
+                        <a href="/student/achievements" class="um-drawer-link" @onclick="CloseDrawer">🏆 إنجازاتي</a>
+                        <a href="/my/certificates" class="um-drawer-link" @onclick="CloseDrawer">🎓 شهاداتي</a>
+                        <a href="/leaderboard" class="um-drawer-link" @onclick="CloseDrawer">📊 المتصدّرون</a>
+                        <div class="um-drawer-section">حسابي</div>
+                        <a href="/student/subscriptions" class="um-drawer-link" @onclick="CloseDrawer">💳 اشتراكاتي</a>
+                        <a href="/student/bookmarks" class="um-drawer-link" @onclick="CloseDrawer">🔖 المحفوظات</a>
+                        <a href="/my/referral" class="um-drawer-link" @onclick="CloseDrawer">🎁 اَدْعُ صديقًا</a>
+                        <a href="/student/profile/edit" class="um-drawer-link" @onclick="CloseDrawer">👤 ملفّي الشخصي</a>
+                    }
+                </nav>
+                <div class="um-drawer-foot">
+                    <button class="um-drawer-link um-logout" @onclick="Logout">🚪 تسجيل الخروج</button>
+                </div>
+            </aside>
+        }
+
+        @* User dropdown *@
+        <div class="um-user @(_openMenu == "user" ? "open" : "")"
+             @onclick:stopPropagation="true"
+             @onclick='() => Toggle("user")'>
+            <div class="um-avatar">
+                @if (!string.IsNullOrEmpty(Auth.CurrentUser?.AvatarUrl))
+                {
+                    <img src="@AvatarUrl(Auth.CurrentUser!.AvatarUrl)" alt="" />
+                }
+                else
+                {
+                    @(Auth.CurrentUser?.FullName.FirstOrDefault())
+                }
+            </div>
+            <div class="um-user-info">
+                <strong>@Auth.CurrentUser?.FullName</strong>
+                <small>@RoleBadge()</small>
+            </div>
+            <span class="um-caret um-user-caret">▾</span>
+
+            @if (_openMenu == "user")
+            {
+                <div class="um-dropdown" @onclick:stopPropagation="true">
+                    <div class="um-dropdown-head">
+                        <div class="um-avatar um-avatar-lg">@(Auth.CurrentUser?.FullName.FirstOrDefault())</div>
+                        <div>
+                            <strong>@Auth.CurrentUser?.FullName</strong>
+                            <small class="fs-text-muted">@Auth.CurrentUser?.Phone</small>
+                            <span class="um-role-badge">@RoleBadge()</span>
+                        </div>
+                    </div>
+                    <hr />
+
+                    <a href="@DashboardLink()" class="um-item">
+                        <span class="um-item-ic">🏠</span>
+                        <div><strong>لوحة التحكم</strong></div>
+                    </a>
+                    <a href="@ProfileEditLink()" class="um-item">
+                        <span class="um-item-ic">👤</span>
+                        <div><strong>ملفّي الشخصي</strong></div>
+                    </a>
+                    <a href="/settings/notifications" class="um-item">
+                        <span class="um-item-ic">🔔</span>
+                        <div><strong>إعدادات الإشعارات</strong></div>
+                    </a>
+                    <a href="/settings/security/totp" class="um-item">
+                        <span class="um-item-ic">🔐</span>
+                        <div><strong>الأمان (2FA)</strong></div>
+                    </a>
+
+                    @if (Auth.IsInRole("Student"))
+                    {
+                        <a href="/student/subscriptions" class="um-item">
+                            <span class="um-item-ic">💳</span>
+                            <div><strong>اشتراكاتي</strong></div>
+                        </a>
+                        <a href="/student/bookmarks" class="um-item">
+                            <span class="um-item-ic">🔖</span>
+                            <div><strong>المحفوظات</strong></div>
+                        </a>
+                        <a href="/my/referral" class="um-item">
+                            <span class="um-item-ic">🎁</span>
+                            <div><strong>اَدْعُ صديقًا</strong></div>
+                        </a>
+                    }
+
+                    <hr />
+                    <button class="um-item um-logout" @onclick="Logout">
+                        <span class="um-item-ic">🚪</span>
+                        <div><strong>تسجيل الخروج</strong></div>
+                    </button>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+<style>
+    .um-loading { padding: 0 var(--fs-s-4); }
+    .um-guest { display: flex; gap: var(--fs-s-2); align-items: center; }
+
+    .um-wrapper { display: flex; align-items: center; gap: var(--fs-s-3); }
+
+    /* ─── Top nav links ───────────────────────────── */
+    .um-role-nav { display: flex; gap: var(--fs-s-1); align-items: center; }
+    .um-link {
+        display: inline-flex; align-items: center; gap: 6px;
+        color: var(--fs-text-muted);
+        font-weight: 600; font-size: 14px;
+        text-decoration: none;
+        padding: 8px 12px;
+        border-radius: var(--fs-r-md);
+        background: transparent; border: none; cursor: pointer;
+        font-family: var(--fs-font-body);
+        transition: all var(--fs-trans);
+        position: relative;
+    }
+    .um-link:hover { color: var(--fs-primary); background: var(--fs-primary-soft); }
+    .um-link.active { color: var(--fs-primary); background: var(--fs-primary-soft); }
+    .um-link.active::before {
+        content: '';
+        position: absolute;
+        bottom: -2px; right: 12px; left: 12px;
+        height: 3px;
+        background: var(--fs-primary);
+        border-radius: 2px;
+    }
+    .um-link-icon { font-size: 14px; }
+    .um-caret { font-size: 9px; opacity: 0.6; transition: transform var(--fs-trans); margin-right: 2px; }
+
+    /* ─── Dropdown menus (top nav) ────────────────── */
+    .um-menu { position: relative; }
+    .um-trigger { cursor: pointer; }
+    .um-menu.open .um-trigger { color: var(--fs-primary); background: var(--fs-primary-soft); }
+    .um-menu.open .um-caret { transform: rotate(180deg); opacity: 1; }
+
+    .um-panel {
+        display: none;
+        position: absolute;
+        top: calc(100% + 8px);
+        right: 0;
+        min-width: 280px;
+        background: var(--fs-surface);
+        border: 1px solid var(--fs-border);
+        border-radius: var(--fs-r-md);
+        box-shadow: var(--fs-sh-lg);
+        padding: 6px;
+        z-index: 100;
+    }
+    .um-menu.open .um-panel {
+        display: block;
+        animation: um-fade-down 160ms ease;
+    }
+    @@keyframes um-fade-down {
+        from { opacity: 0; transform: translateY(-6px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    .um-pi {
+        display: flex; align-items: flex-start; gap: 10px;
+        padding: 10px 12px;
+        border-radius: var(--fs-r-sm);
+        text-decoration: none; color: var(--fs-text);
+        transition: background var(--fs-trans);
+    }
+    .um-pi:hover { background: var(--fs-primary-soft); }
+    .um-pi > span { font-size: 22px; flex-shrink: 0; line-height: 1.2; }
+    .um-pi strong { display: block; font-size: 14px; font-weight: 700; color: var(--fs-text); }
+    .um-pi small { display: block; font-size: 12px; color: var(--fs-text-muted); margin-top: 1px; }
+    .um-pi:hover strong { color: var(--fs-primary); }
+
+    /* ─── Icon button (search) ─────────────────────── */
+    .um-icon-btn {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 36px; height: 36px;
+        border-radius: 50%;
+        text-decoration: none;
+        font-size: 16px;
+        background: transparent;
+        transition: background var(--fs-trans);
+    }
+    .um-icon-btn:hover { background: var(--fs-primary-soft); }
+    .um-lang-btn { font-family: var(--fs-font-mono, monospace); font-size: 13px; font-weight: 800; color: var(--fs-text); text-decoration: none; }
+    .um-lang-btn:hover { color: var(--fs-primary); }
+    .um-install-btn {
+        background: var(--fs-primary) !important;
+        color: white !important;
+        font-weight: 800;
+        animation: pulse-install 2s ease-in-out infinite;
+    }
+    @@keyframes pulse-install {
+        0%, 100% { box-shadow: 0 0 0 0 rgba(91, 79, 229, 0.5); }
+        50% { box-shadow: 0 0 0 6px rgba(91, 79, 229, 0); }
+    }
+
+    /* ─── User pill + dropdown ────────────────────── */
+    .um-user {
+        display: flex; align-items: center; gap: 8px;
+        padding: 4px 12px 4px 6px;
+        border: 1px solid var(--fs-border);
+        border-radius: var(--fs-r-full);
+        cursor: pointer;
+        position: relative;
+        transition: all var(--fs-trans);
+        background: var(--fs-surface);
+    }
+    .um-user:hover, .um-user.open { border-color: var(--fs-primary); box-shadow: 0 0 0 3px var(--fs-primary-soft); }
+    .um-user.open .um-user-caret { transform: rotate(180deg); }
+
+    .um-avatar {
+        width: 32px; height: 32px; border-radius: 50%;
+        background: linear-gradient(135deg, var(--fs-primary), var(--fs-secondary));
+        color: white; font-weight: 800; font-size: 14px;
+        display: flex; align-items: center; justify-content: center;
+        flex-shrink: 0;
+        overflow: hidden;
+    }
+    .um-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .um-avatar-lg { width: 44px; height: 44px; font-size: 18px; }
+
+    .um-user-info { display: flex; flex-direction: column; line-height: 1.2; max-width: 140px; }
+    .um-user-info strong { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .um-user-info small { font-size: 11px; color: var(--fs-text-muted); }
+
+    .um-user-caret { font-size: 10px; color: var(--fs-text-muted); transition: transform var(--fs-trans); }
+
+    .um-dropdown {
+        position: absolute;
+        top: calc(100% + 8px);
+        left: 0;
+        min-width: 280px;
+        background: var(--fs-surface);
+        border: 1px solid var(--fs-border);
+        border-radius: var(--fs-r-md);
+        box-shadow: var(--fs-sh-lg);
+        padding: var(--fs-s-2);
+        z-index: 100;
+        animation: um-fade-down 150ms ease;
+    }
+    .um-dropdown hr {
+        border: none;
+        border-top: 1px solid var(--fs-border);
+        margin: var(--fs-s-1) 0;
+    }
+    .um-dropdown-head {
+        padding: var(--fs-s-3);
+        display: flex; align-items: center; gap: 12px;
+    }
+    .um-dropdown-head strong { display: block; font-size: 14px; }
+    .um-dropdown-head small { display: block; font-size: 12px; direction: ltr; text-align: right; }
+    .um-role-badge {
+        display: inline-block; margin-top: 4px;
+        padding: 1px 8px; border-radius: var(--fs-r-full);
+        background: var(--fs-primary-soft); color: var(--fs-primary);
+        font-size: 11px; font-weight: 700;
+    }
+
+    .um-item {
+        display: flex; align-items: center; gap: 10px;
+        width: 100%;
+        padding: 10px 12px;
+        border: none; background: transparent;
+        color: var(--fs-text);
+        font-family: var(--fs-font-body); font-size: 14px;
+        text-decoration: none;
+        cursor: pointer;
+        border-radius: var(--fs-r-sm);
+        text-align: right;
+        transition: background var(--fs-trans);
+    }
+    .um-item:hover { background: var(--fs-primary-soft); color: var(--fs-primary); }
+    .um-item-ic { font-size: 18px; }
+    .um-item.um-logout { color: var(--fs-danger); }
+    .um-item.um-logout:hover { background: #FEE2E2; color: var(--fs-danger); }
+
+    /* ─── Mobile hamburger ─────────────────────────── */
+    .um-hamburger {
+        display: none;
+        width: 38px; height: 38px;
+        background: transparent; border: 1px solid var(--fs-border);
+        border-radius: var(--fs-r-sm);
+        flex-direction: column; align-items: center; justify-content: center;
+        gap: 4px; cursor: pointer; padding: 0;
+        transition: background var(--fs-trans);
+    }
+    .um-hamburger:hover { background: var(--fs-primary-soft); border-color: var(--fs-primary); }
+    .um-hamburger span {
+        display: block; width: 18px; height: 2px;
+        background: var(--fs-text); border-radius: 2px;
+    }
+
+    /* ─── Mobile drawer ────────────────────────────── */
+    .um-backdrop {
+        position: fixed; inset: 0; background: rgba(15,23,42,0.5);
+        z-index: 200; animation: fadeIn 150ms ease;
+    }
+    .um-drawer {
+        position: fixed; top: 0; right: 0; bottom: 0;
+        width: min(300px, 86vw);
+        background: var(--fs-surface);
+        z-index: 201;
+        box-shadow: -8px 0 24px rgba(0,0,0,0.18);
+        display: flex; flex-direction: column;
+        animation: slideIn 220ms ease;
+    }
+    @@keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+    @@keyframes slideIn { from { transform: translateX(100%) } to { transform: translateX(0) } }
+
+    .um-drawer-head {
+        display: flex; align-items: center; gap: var(--fs-s-3);
+        padding: var(--fs-s-4); border-bottom: 1px solid var(--fs-border);
+    }
+    .um-drawer-head strong { display: block; font-size: 14px; }
+    .um-drawer-head small { display: block; font-size: 12px; }
+    .um-drawer-close {
+        margin-right: auto;
+        width: 36px; height: 36px; border-radius: 50%;
+        background: var(--fs-bg); border: 1px solid var(--fs-border);
+        cursor: pointer; font-size: 14px;
+    }
+    .um-drawer-nav {
+        display: flex; flex-direction: column; padding: var(--fs-s-2);
+        gap: 1px; overflow-y: auto; flex: 1;
+    }
+    .um-drawer-section {
+        font-size: 11px; font-weight: 700;
+        color: var(--fs-text-muted);
+        padding: var(--fs-s-3) var(--fs-s-3) 6px;
+        text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .um-drawer-link {
+        display: flex; align-items: center; gap: var(--fs-s-2);
+        padding: 12px var(--fs-s-3);
+        text-decoration: none; color: var(--fs-text);
+        font-weight: 600; font-size: 14px;
+        border-radius: var(--fs-r-md);
+        background: transparent; border: none;
+        cursor: pointer; text-align: right; width: 100%;
+        font-family: var(--fs-font-body);
+    }
+    .um-drawer-link:hover { background: var(--fs-primary-soft); color: var(--fs-primary); }
+    .um-drawer-foot {
+        padding: var(--fs-s-2); border-top: 1px solid var(--fs-border);
+    }
+    .um-drawer-foot .um-logout { color: var(--fs-danger); }
+    .um-drawer-foot .um-logout:hover { background: #FEE2E2; color: var(--fs-danger); }
+
+    /* ─── Responsive ───────────────────────────────── */
+    @@media (max-width: 1100px) {
+        .um-user-info { display: none; }
+    }
+    @@media (max-width: 900px) {
+        .um-role-nav { display: none; }
+        .um-hamburger { display: flex; }
+    }
+</style>
+
+@code {
+    private bool _ready;
+    private string? _openMenu;       // null | "user" | "student-learn" | "student-progress" | "teacher-teaching" | "admin-reviews" | "admin-ops"
+    private bool _drawerOpen;
+    private string _currentPath = "/";
+    private bool _isDark;
+    private bool _canInstall;
+    private DotNetObjectReference<UserMenu>? _selfRef;
+    private bool _isArabic = System.Threading.Thread.CurrentThread.CurrentUICulture?.TwoLetterISOLanguageName != "en";
+
+    private string LangToggleUrl()
+    {
+        var to = _isArabic ? "en" : "ar";
+        var returnUrl = Uri.EscapeDataString(_currentPath);
+        return $"/set-culture?culture={to}&returnUrl={returnUrl}";
+    }
+
+    protected override void OnInitialized()
+    {
+        Auth.OnChange += StateHasChanged;
+        Nav.LocationChanged += OnLocationChanged;
+        _currentPath = new Uri(Nav.Uri).AbsolutePath;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            try { _isDark = await JS.InvokeAsync<bool>("fseduTheme.isDark"); }
+            catch { }
+
+            // Check if PWA can be installed, and listen for the event.
+            try
+            {
+                _canInstall = await JS.InvokeAsync<bool>("fseduPwa.canInstall");
+                _selfRef = DotNetObjectReference.Create(this);
+                await JS.InvokeVoidAsync("eval",
+                    "window.addEventListener('fsedu-install-available', function(){ window.__fseduInstallable=true; });" +
+                    "window.addEventListener('fsedu-install-completed', function(){ window.__fseduInstallable=false; });");
+            }
+            catch { }
+
+            _ready = true;
+            StateHasChanged();
+        }
+        else
+        {
+            // Refresh canInstall on subsequent renders (cheap check)
+            try
+            {
+                var canNow = await JS.InvokeAsync<bool>("fseduPwa.canInstall");
+                if (canNow != _canInstall)
+                {
+                    _canInstall = canNow;
+                    StateHasChanged();
+                }
+            }
+            catch { }
+        }
+    }
+
+    private async Task ToggleTheme()
+    {
+        try
+        {
+            var next = await JS.InvokeAsync<string>("fseduTheme.toggle");
+            _isDark = next == "dark";
+            StateHasChanged();
+        }
+        catch { }
+    }
+
+    private async Task InstallApp()
+    {
+        try
+        {
+            var outcome = await JS.InvokeAsync<string>("fseduPwa.prompt");
+            // 'accepted' or 'dismissed' or 'unavailable'
+            _canInstall = outcome != "accepted" && await JS.InvokeAsync<bool>("fseduPwa.canInstall");
+            StateHasChanged();
+        }
+        catch { }
+    }
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        _openMenu = null;
+        _drawerOpen = false;
+        _currentPath = new Uri(e.Location).AbsolutePath;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void Toggle(string name) => _openMenu = (_openMenu == name) ? null : name;
+    private void CloseAllMenus() => _openMenu = null;
+    private void ToggleDrawer() => _drawerOpen = !_drawerOpen;
+    private void CloseDrawer() => _drawerOpen = false;
+
+    private string ActiveIfStartsWith(string prefix) =>
+        _currentPath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ? "active" : "";
+
+    private async Task Logout()
+    {
+        await Auth.LogoutAsync();
+        _openMenu = null;
+        Nav.NavigateTo("/", forceLoad: true);
+    }
+
+    private string RoleBadge() => Auth.CurrentUser?.Roles.FirstOrDefault() switch
+    {
+        "Student" => "طالب",
+        "Parent" => "ولي أمر",
+        "Teacher" => "مدرّس",
+        "Admin" => "مشرف إداري",
+        "Supervisor" => "مشرف أكاديمي",
+        _ => "مستخدم"
+    };
+
+    private string DashboardLink() => Auth.CurrentUser?.Roles.FirstOrDefault() switch
+    {
+        "Student" => "/dashboard/student",
+        "Parent" => "/parent/children",
+        "Teacher" => "/dashboard/teacher",
+        "Admin" => "/admin/dashboard",
+        _ => "/"
+    };
+
+    private string ProfileEditLink() => Auth.CurrentUser?.Roles.FirstOrDefault() switch
+    {
+        "Student" => "/student/profile/edit",
+        "Teacher" => "/teacher/profile/edit",
+        _ => "/"
+    };
+
+    private string AvatarUrl(string? path)
+    {
+        if (string.IsNullOrEmpty(path)) return "";
+        if (path.StartsWith("http", StringComparison.OrdinalIgnoreCase)) return path;
+        var apiBase = (Config["ApiBaseUrl"] ?? "").TrimEnd('/');
+        return apiBase + path;
+    }
+
+    public void Dispose()
+    {
+        Auth.OnChange -= StateHasChanged;
+        Nav.LocationChanged -= OnLocationChanged;
+    }
+}

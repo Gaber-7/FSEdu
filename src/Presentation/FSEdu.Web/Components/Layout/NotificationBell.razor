@@ -1,0 +1,292 @@
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject NavigationManager Nav
+@implements IDisposable
+
+@if (!Auth.IsAuthenticated)
+{
+    @* hidden when not logged in *@
+}
+else
+{
+    <div class="bell-wrapper" @onclick="ToggleDropdown" @onclick:stopPropagation="true">
+        <button class="bell-btn" type="button" title="الإشعارات">
+            🔔
+            @if (_unreadCount > 0)
+            {
+                <span class="bell-badge">@(_unreadCount > 99 ? "99+" : _unreadCount.ToString())</span>
+            }
+        </button>
+
+        @if (_open)
+        {
+            <div class="bell-dropdown" @onclick:stopPropagation="true">
+                <div class="bell-head">
+                    <strong>الإشعارات</strong>
+                    <div class="bell-head-actions">
+                        @if (_unreadCount > 0)
+                        {
+                            <button class="link-btn" @onclick="MarkAllRead">تعليم الكل كمقروء</button>
+                        }
+                        <a href="/settings/notifications" class="link-btn" title="إعدادات الإشعارات">⚙️</a>
+                    </div>
+                </div>
+                <hr />
+                @if (_loading)
+                {
+                    <div class="fs-center" style="padding:20px"><span class="fs-spinner"></span></div>
+                }
+                else if (_items is null || !_items.Any())
+                {
+                    <div class="empty-state">
+                        <div style="font-size:32px">🔕</div>
+                        <small>لا توجد إشعارات</small>
+                    </div>
+                }
+                else
+                {
+                    <div class="bell-list">
+                        @foreach (var n in _items.Take(8))
+                        {
+                            <div class="notif-item @(!n.IsRead ? "unread" : "")"
+                                 @onclick="() => OpenNotification(n)">
+                                <div class="notif-icon">@TypeIcon(n.Type)</div>
+                                <div class="notif-body">
+                                    <strong>@n.Title</strong>
+                                    <small class="notif-text">@n.Body</small>
+                                    <small class="notif-time">@RelativeTime(n.CreatedAtUtc)</small>
+                                </div>
+                                @if (!n.IsRead) { <span class="dot"></span> }
+                            </div>
+                        }
+                    </div>
+                    <hr />
+                    <a href="/notifications" class="view-all">عرض كل الإشعارات ←</a>
+                }
+            </div>
+        }
+    </div>
+}
+
+<style>
+    .bell-wrapper { position: relative; }
+
+    .bell-btn {
+        position: relative;
+        width: 40px; height: 40px;
+        border-radius: 50%;
+        background: var(--fs-bg);
+        border: 1px solid var(--fs-border);
+        font-size: 20px;
+        cursor: pointer;
+        transition: all var(--fs-trans);
+    }
+    .bell-btn:hover { background: var(--fs-primary-soft); border-color: var(--fs-primary); }
+
+    .bell-badge {
+        position: absolute; top: -4px; right: -4px;
+        min-width: 20px; height: 20px;
+        padding: 0 5px;
+        background: var(--fs-danger); color: white;
+        border-radius: 10px;
+        font-size: 11px; font-weight: 800;
+        display: flex; align-items: center; justify-content: center;
+        border: 2px solid var(--fs-surface);
+    }
+
+    .bell-dropdown {
+        position: absolute;
+        top: calc(100% + 8px);
+        left: 0;
+        width: 360px; max-width: 90vw;
+        background: var(--fs-surface);
+        border: 1px solid var(--fs-border);
+        border-radius: var(--fs-r-md);
+        box-shadow: var(--fs-sh-lg);
+        padding: var(--fs-s-3);
+        z-index: 200;
+        max-height: 480px; overflow-y: auto;
+    }
+
+    .bell-head { display: flex; justify-content: space-between; align-items: center; }
+    .bell-head strong { font-size: 14px; }
+    .bell-head-actions { display: flex; gap: var(--fs-s-2); align-items: center; }
+    .link-btn { background: none; border: none; color: var(--fs-primary); cursor: pointer; font-size: 12px; font-family: inherit; text-decoration: none; }
+    a.link-btn { font-size: 16px; }
+
+    hr { border: none; border-top: 1px solid var(--fs-border); margin: var(--fs-s-2) 0; }
+
+    .empty-state { text-align: center; padding: var(--fs-s-4); color: var(--fs-text-muted); }
+
+    .bell-list { display: flex; flex-direction: column; gap: var(--fs-s-1); }
+
+    .notif-item {
+        display: flex; align-items: start; gap: var(--fs-s-2);
+        padding: var(--fs-s-2);
+        border-radius: var(--fs-r-sm);
+        cursor: pointer;
+        transition: background var(--fs-trans);
+        position: relative;
+    }
+    .notif-item:hover { background: var(--fs-primary-soft); }
+    .notif-item.unread { background: rgba(91, 79, 229, 0.06); }
+
+    .notif-icon { font-size: 22px; flex-shrink: 0; }
+    .notif-body { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+    .notif-body strong { font-size: 13px; line-height: 1.3; margin-bottom: 2px; }
+    .notif-text { font-size: 12px; color: var(--fs-text-muted); line-height: 1.4; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+    .notif-time { font-size: 11px; color: var(--fs-text-subtle); margin-top: 2px; }
+
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--fs-primary); flex-shrink: 0; margin-top: 6px; }
+
+    .view-all {
+        display: block; text-align: center;
+        padding: var(--fs-s-2);
+        color: var(--fs-primary); font-weight: 600; font-size: 13px;
+    }
+</style>
+
+@code {
+    private bool _open;
+    private bool _loading;
+    private int _unreadCount;
+    private List<FSEdu.Shared.Contracts.Notifications.NotificationDto>? _items;
+    private Timer? _pollTimer;
+
+    protected override void OnInitialized()
+    {
+        Auth.OnChange += StateHasChanged;
+        Nav.LocationChanged += OnLocation;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            if (Auth.IsAuthenticated)
+            {
+                await RefreshCount();
+                StartPolling();
+            }
+            StateHasChanged();
+        }
+    }
+
+    private void StartPolling()
+    {
+        _pollTimer = new Timer(async _ =>
+        {
+            if (!Auth.IsAuthenticated) return;
+            try
+            {
+                var prev = _unreadCount;
+                await RefreshCount();
+                if (prev != _unreadCount) await InvokeAsync(StateHasChanged);
+            }
+            catch { }
+        }, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+    }
+
+    private async Task RefreshCount()
+    {
+        try { _unreadCount = await Api.GetUnreadCountAsync(); }
+        catch { _unreadCount = 0; }
+    }
+
+    private async Task ToggleDropdown()
+    {
+        _open = !_open;
+        if (_open)
+        {
+            _loading = true; StateHasChanged();
+            try { _items = await Api.GetMyNotificationsAsync(15); }
+            catch { _items = new(); }
+            _loading = false;
+        }
+        StateHasChanged();
+    }
+
+    private async Task OpenNotification(FSEdu.Shared.Contracts.Notifications.NotificationDto n)
+    {
+        if (!n.IsRead)
+        {
+            await Api.MarkNotificationReadAsync(n.Id);
+            _unreadCount = Math.Max(0, _unreadCount - 1);
+        }
+        _open = false;
+
+        // Try parsing data for url
+        if (!string.IsNullOrEmpty(n.DataJson))
+        {
+            try
+            {
+                var data = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object>>(n.DataJson);
+                if (data is not null && data.TryGetValue("url", out var url) && url is not null)
+                {
+                    Nav.NavigateTo(url.ToString()!);
+                    return;
+                }
+            }
+            catch { }
+        }
+
+        Nav.NavigateTo("/notifications");
+    }
+
+    private async Task MarkAllRead()
+    {
+        await Api.MarkAllNotificationsReadAsync();
+        _unreadCount = 0;
+        if (_items is not null)
+            for (int i = 0; i < _items.Count; i++)
+                _items[i] = _items[i] with { IsRead = true };
+        StateHasChanged();
+    }
+
+    private void OnLocation(object? s, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        _open = false;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private static string TypeIcon(string type) => type switch
+    {
+        var t when t.StartsWith("payment.approved") => "✅",
+        var t when t.StartsWith("payment.rejected") => "⚠️",
+        var t when t.StartsWith("course.approved") => "📚",
+        var t when t.StartsWith("course.rejected") => "❌",
+        var t when t.StartsWith("course.announcement") => "📣",
+        var t when t.StartsWith("teacher.approved") => "🎉",
+        var t when t.StartsWith("ticket.created") => "❓",
+        var t when t.StartsWith("ticket.replied") => "💬",
+        var t when t.StartsWith("ticket.resolved") => "✓",
+        var t when t.StartsWith("lesson.question") => "❓",
+        var t when t.StartsWith("lesson.answer") => "💬",
+        var t when t.StartsWith("session.reminder") => "⏰",
+        var t when t.StartsWith("session.starting") => "🔴",
+        var t when t.StartsWith("subscription.expiring") => "⏳",
+        var t when t.StartsWith("subscription.activated") => "🚀",
+        var t when t.StartsWith("badge.earned") => "🏆",
+        var t when t.StartsWith("admin.broadcast") => "📣",
+        _ => "🔔"
+    };
+
+    private static string RelativeTime(DateTime utc)
+    {
+        var diff = DateTime.UtcNow - utc;
+        if (diff.TotalMinutes < 1) return "الآن";
+        if (diff.TotalMinutes < 60) return $"منذ {(int)diff.TotalMinutes} دقيقة";
+        if (diff.TotalHours < 24) return $"منذ {(int)diff.TotalHours} ساعة";
+        if (diff.TotalDays < 7) return $"منذ {(int)diff.TotalDays} يوم";
+        return utc.ToString("yyyy/MM/dd");
+    }
+
+    public void Dispose()
+    {
+        _pollTimer?.Dispose();
+        Auth.OnChange -= StateHasChanged;
+        Nav.LocationChanged -= OnLocation;
+    }
+}

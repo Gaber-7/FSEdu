@@ -1,0 +1,177 @@
+@page "/admin/broadcast"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject NavigationManager Nav
+
+<PageTitle>بثّ إشعار جماعي</PageTitle>
+
+<div class="bcast-page">
+    <div class="fs-container">
+        <header class="bc-head">
+            <h1>📣 بثّ إشعار جماعي</h1>
+            <p class="fs-text-muted">يصل الإشعار للمستخدمين المختارين على الموقع وفي push notifications.</p>
+        </header>
+
+        <div class="fs-card bc-card">
+            <h3>الجمهور المستهدف</h3>
+            <div class="bc-targets">
+                @foreach (var (key, label, emoji) in _targets)
+                {
+                    <button class="bc-target @(_target == key ? "active" : "")"
+                            @onclick="() => SelectTarget(key)">
+                        <span>@emoji</span>
+                        <strong>@label</strong>
+                    </button>
+                }
+            </div>
+
+            @if (_target == "stage")
+            {
+                <label class="bc-label">المرحلة</label>
+                <select class="bc-input" @bind="_stageId">
+                    <option value="0">— اختر مرحلة —</option>
+                    @if (_stages is not null)
+                    {
+                        @foreach (var s in _stages)
+                        {
+                            <option value="@s.Id">@s.NameAr</option>
+                        }
+                    }
+                </select>
+            }
+
+            <label class="bc-label">العنوان</label>
+            <input type="text" class="bc-input" maxlength="255"
+                   placeholder="مثلاً: صيانة مجدولة الليلة"
+                   @bind="_title" @bind:event="oninput" />
+
+            <label class="bc-label">النص</label>
+            <textarea class="bc-input" rows="5" maxlength="2000"
+                      placeholder="نص الإشعار..."
+                      @bind="_body" @bind:event="oninput"></textarea>
+
+            <label class="bc-label">رابط (اختياري) — لإعادة التوجيه عند الضغط على الإشعار</label>
+            <input type="text" class="bc-input" maxlength="500"
+                   placeholder="/some/path أو https://..."
+                   @bind="_url" @bind:event="oninput" />
+
+            @if (!string.IsNullOrEmpty(_error))
+            {
+                <div class="fs-alert fs-alert-error">@_error</div>
+            }
+            @if (_lastSent.HasValue)
+            {
+                <div class="fs-alert fs-alert-success">
+                    تم إرسال الإشعار لـ <strong>@_lastSent</strong> مستخدم.
+                </div>
+            }
+
+            <div class="bc-actions">
+                <button class="fs-btn fs-btn-primary" @onclick="Send" disabled="@_sending">
+                    @(_sending ? "جارٍ الإرسال..." : "📤 إرسال الإشعار")
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .bcast-page { padding: var(--fs-s-8) 0; min-height: calc(100vh - 72px); }
+    .bc-head { margin-bottom: var(--fs-s-5); }
+    .bc-head h1 { margin: 0 0 var(--fs-s-1); font-size: 26px; }
+
+    .bc-card { padding: var(--fs-s-5); }
+    .bc-card h3 { margin: 0 0 var(--fs-s-3); font-size: 17px; }
+
+    .bc-targets { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: var(--fs-s-2); margin-bottom: var(--fs-s-4); }
+    .bc-target {
+        background: white; border: 2px solid var(--fs-border); border-radius: var(--fs-r-md);
+        padding: var(--fs-s-3); cursor: pointer;
+        display: flex; flex-direction: column; align-items: center; gap: 4px;
+        transition: all var(--fs-trans);
+    }
+    .bc-target span { font-size: 28px; }
+    .bc-target strong { font-size: 13px; }
+    .bc-target:hover { border-color: var(--fs-primary); }
+    .bc-target.active { border-color: var(--fs-primary); background: var(--fs-primary-soft); }
+
+    .bc-label { display: block; font-size: 13px; font-weight: 600; margin: var(--fs-s-3) 0 var(--fs-s-1); }
+    .bc-input {
+        width: 100%; padding: var(--fs-s-2) var(--fs-s-3);
+        border: 1px solid var(--fs-border); border-radius: var(--fs-r-md);
+        font-family: inherit; font-size: 14px; line-height: 1.7;
+    }
+    .bc-input:focus { outline: none; border-color: var(--fs-primary); }
+    textarea.bc-input { resize: vertical; }
+
+    .bc-actions { margin-top: var(--fs-s-4); display: flex; gap: var(--fs-s-2); }
+</style>
+
+@code {
+    private static readonly (string key, string label, string emoji)[] _targets =
+    {
+        ("all", "كل المستخدمين", "🌍"),
+        ("students", "كل الطلاب", "🎓"),
+        ("teachers", "كل المدرّسين", "👨‍🏫"),
+        ("parents", "كل أولياء الأمور", "👨‍👩‍👦"),
+        ("stage", "طلاب مرحلة معيّنة", "📚")
+    };
+
+    private string _target = "all";
+    private int _stageId;
+    private string _title = "";
+    private string _body = "";
+    private string _url = "";
+    private string? _error;
+    private bool _sending;
+    private int? _lastSent;
+    private List<FSEdu.Shared.Contracts.Reference.StageDto>? _stages;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            if (Auth.CurrentUser is null || !Auth.IsInRole("Admin"))
+            {
+                Nav.NavigateTo("/login");
+                return;
+            }
+            _stages = await Api.GetStagesAsync();
+            StateHasChanged();
+        }
+    }
+
+    private void SelectTarget(string key)
+    {
+        _target = key;
+        if (key != "stage") _stageId = 0;
+        StateHasChanged();
+    }
+
+    private async Task Send()
+    {
+        _error = null; _lastSent = null;
+        if (_title.Trim().Length < 2) { _error = "العنوان قصير جدًا"; return; }
+        if (_body.Trim().Length < 2) { _error = "النص قصير جدًا"; return; }
+        if (_target == "stage" && _stageId <= 0) { _error = "اختر مرحلة"; return; }
+
+        var targetParam = _target == "stage" ? $"stage:{_stageId}" : _target;
+
+        _sending = true; StateHasChanged();
+        try
+        {
+            var (count, err) = await Api.BroadcastNotificationAsync(
+                new FSEdu.Shared.Contracts.Admin.BroadcastNotificationRequest(
+                    targetParam, _title.Trim(), _body.Trim(),
+                    string.IsNullOrWhiteSpace(_url) ? null : _url.Trim()));
+
+            if (err is not null) { _error = err.Message ?? "تعذّر الإرسال"; return; }
+            _lastSent = count ?? 0;
+            // Clear inputs after successful send
+            _title = ""; _body = ""; _url = "";
+        }
+        finally { _sending = false; StateHasChanged(); }
+    }
+}

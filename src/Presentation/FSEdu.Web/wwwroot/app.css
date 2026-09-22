@@ -1,0 +1,225 @@
+/* ═══════════════════════════════════════════════════════════
+   FSEdu Design System — v1.0 — RTL-first, Dark-mode ready
+   ═══════════════════════════════════════════════════════════ */
+
+@import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&family=Cairo:wght@400;600;700&family=Readex+Pro:wght@300;400;500;600;700&display=swap');
+
+:root {
+  --fs-primary: #5B4FE5;
+  --fs-primary-soft: #EEF0FE;
+  --fs-primary-hover: #4A3FD4;
+  --fs-primary-dark: #3B32B3;
+  --fs-secondary: #00C8A8;
+  --fs-secondary-soft: #E0FAF4;
+  --fs-accent: #FFB547;
+  --fs-accent-soft: #FFF4DF;
+  --fs-success: #10B981;
+  --fs-warning: #F59E0B;
+  --fs-danger: #EF4444;
+  --fs-info: #3B82F6;
+  --fs-bg: #FAFBFF;
+  --fs-surface: #FFFFFF;
+  --fs-elevated: #FFFFFF;
+  --fs-border: #E4E7F0;
+  --fs-border-soft: #F0F2F8;
+  --fs-text: #1A1F36;
+  --fs-text-muted: #6B7280;
+  --fs-text-subtle: #9CA3AF;
+  --fs-font-body: 'Tajawal', 'Cairo', -apple-system, sans-serif;
+  --fs-font-heading: 'Tajawal', 'Cairo', sans-serif;
+  --fs-font-ui: 'Readex Pro', 'Tajawal', sans-serif;
+  --fs-r-xs: 4px; --fs-r-sm: 8px; --fs-r-md: 12px; --fs-r-lg: 16px; --fs-r-xl: 24px; --fs-r-full: 9999px;
+  --fs-sh-sm: 0 1px 2px rgba(16, 24, 40, 0.05);
+  --fs-sh-md: 0 4px 8px -2px rgba(16, 24, 40, 0.08), 0 2px 4px -2px rgba(16, 24, 40, 0.04);
+  --fs-sh-lg: 0 12px 24px -4px rgba(16, 24, 40, 0.12), 0 4px 8px -2px rgba(16, 24, 40, 0.06);
+  --fs-sh-xl: 0 24px 48px -8px rgba(16, 24, 40, 0.16);
+  --fs-sh-focus: 0 0 0 4px rgba(91, 79, 229, 0.15);
+  --fs-s-1: 4px; --fs-s-2: 8px; --fs-s-3: 12px; --fs-s-4: 16px; --fs-s-5: 20px;
+  --fs-s-6: 24px; --fs-s-8: 32px; --fs-s-10: 40px; --fs-s-12: 48px; --fs-s-16: 64px;
+  --fs-trans: 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+[data-theme="dark"] {
+  --fs-bg: #0B0F1A;
+  --fs-surface: #151B2B;
+  --fs-elevated: #1E2742;
+  --fs-border: #2A3350;
+  --fs-border-soft: #1E2742;
+  --fs-text: #E4E7F0;
+  --fs-text-muted: #9CA3AF;
+  --fs-text-subtle: #6B7280;
+  --fs-primary-soft: rgba(91, 79, 229, 0.15);
+  --fs-secondary-soft: rgba(0, 200, 168, 0.15);
+  --fs-accent-soft: rgba(255, 181, 71, 0.15);
+  --fs-sh-md: 0 4px 8px -2px rgba(0, 0, 0, 0.4);
+  --fs-sh-lg: 0 12px 24px -4px rgba(0, 0, 0, 0.5);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0; padding: 0;
+  font-family: var(--fs-font-body);
+  font-size: 16px; line-height: 1.6;
+  color: var(--fs-text);
+  background: var(--fs-bg);
+  direction: rtl; text-align: right;
+  -webkit-font-smoothing: antialiased;
+  transition: background var(--fs-trans), color var(--fs-trans);
+}
+
+html { scroll-behavior: smooth; }
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--fs-font-heading);
+  font-weight: 800; line-height: 1.2;
+  color: var(--fs-text);
+  margin: 0 0 var(--fs-s-4) 0;
+}
+
+h1 { font-size: clamp(2rem, 5vw, 3.5rem); }
+h2 { font-size: clamp(1.5rem, 3.5vw, 2.5rem); }
+h3 { font-size: clamp(1.25rem, 2.5vw, 1.75rem); }
+
+p { margin: 0 0 var(--fs-s-4) 0; }
+
+a { color: var(--fs-primary); text-decoration: none; transition: color var(--fs-trans); }
+a:hover { color: var(--fs-primary-hover); }
+
+.fs-container { max-width: 1280px; margin: 0 auto; padding: 0 var(--fs-s-6); }
+@media (max-width: 640px) { .fs-container { padding: 0 var(--fs-s-4); } }
+
+.fs-flex { display: flex; }
+.fs-flex-col { display: flex; flex-direction: column; }
+.fs-center { display: flex; align-items: center; justify-content: center; }
+.fs-gap-2 { gap: var(--fs-s-2); } .fs-gap-3 { gap: var(--fs-s-3); }
+.fs-gap-4 { gap: var(--fs-s-4); } .fs-gap-6 { gap: var(--fs-s-6); }
+.fs-text-center { text-align: center; }
+.fs-text-muted { color: var(--fs-text-muted); }
+.fs-text-subtle { color: var(--fs-text-subtle); }
+
+.fs-grid { display: grid; gap: var(--fs-s-6); }
+.fs-grid-2 { grid-template-columns: repeat(2, 1fr); }
+.fs-grid-3 { grid-template-columns: repeat(3, 1fr); }
+.fs-grid-4 { grid-template-columns: repeat(4, 1fr); }
+@media (max-width: 900px) { .fs-grid-3, .fs-grid-4 { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 600px) { .fs-grid-2, .fs-grid-3, .fs-grid-4 { grid-template-columns: 1fr; } }
+
+.fs-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: var(--fs-s-2);
+  padding: 12px 24px;
+  border: 1px solid transparent;
+  border-radius: var(--fs-r-md);
+  font-family: var(--fs-font-ui);
+  font-size: 15px; font-weight: 600;
+  cursor: pointer;
+  transition: all var(--fs-trans);
+  text-decoration: none; white-space: nowrap;
+}
+.fs-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.fs-btn:focus-visible { box-shadow: var(--fs-sh-focus); outline: none; }
+
+.fs-btn-primary { background: var(--fs-primary); color: white; }
+.fs-btn-primary:hover:not(:disabled) {
+  background: var(--fs-primary-hover);
+  transform: translateY(-1px);
+  box-shadow: var(--fs-sh-md);
+}
+
+.fs-btn-secondary { background: var(--fs-secondary); color: white; }
+.fs-btn-secondary:hover:not(:disabled) { background: #00B598; transform: translateY(-1px); }
+
+.fs-btn-outline { background: transparent; border-color: var(--fs-border); color: var(--fs-text); }
+.fs-btn-outline:hover:not(:disabled) {
+  border-color: var(--fs-primary);
+  color: var(--fs-primary);
+  background: var(--fs-primary-soft);
+}
+
+.fs-btn-ghost { background: transparent; color: var(--fs-text); }
+.fs-btn-ghost:hover:not(:disabled) { background: var(--fs-primary-soft); color: var(--fs-primary); }
+
+.fs-btn-lg { padding: 16px 32px; font-size: 17px; border-radius: var(--fs-r-lg); }
+.fs-btn-sm { padding: 8px 16px; font-size: 13px; }
+.fs-btn-block { width: 100%; }
+
+.fs-card {
+  background: var(--fs-surface);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-r-lg);
+  padding: var(--fs-s-6);
+  transition: all var(--fs-trans);
+}
+.fs-card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--fs-sh-lg);
+  border-color: var(--fs-primary-soft);
+}
+.fs-card-elevated { box-shadow: var(--fs-sh-md); border-color: var(--fs-border-soft); }
+
+.fs-input, .fs-select, .fs-textarea {
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-r-md);
+  background: var(--fs-surface);
+  color: var(--fs-text);
+  font-family: var(--fs-font-body);
+  font-size: 15px;
+  transition: all var(--fs-trans);
+  direction: rtl;
+}
+.fs-input:focus, .fs-select:focus, .fs-textarea:focus {
+  outline: none;
+  border-color: var(--fs-primary);
+  box-shadow: var(--fs-sh-focus);
+}
+.fs-input::placeholder { color: var(--fs-text-subtle); }
+.fs-input-phone { direction: ltr; text-align: left; }
+
+.fs-label {
+  display: block;
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--fs-text);
+  margin-bottom: var(--fs-s-2);
+}
+
+.fs-form-group { margin-bottom: var(--fs-s-4); }
+.fs-error-msg { color: var(--fs-danger); font-size: 13px; margin-top: var(--fs-s-1); }
+
+.fs-alert { padding: var(--fs-s-4); border-radius: var(--fs-r-md); font-size: 14px; display: flex; gap: var(--fs-s-3); }
+.fs-alert-error { background: #FEE; color: #C53030; border: 1px solid #FEB2B2; }
+.fs-alert-success { background: #F0FDF4; color: #065F46; border: 1px solid #A7F3D0; }
+.fs-alert-info { background: #EBF5FF; color: #1E40AF; border: 1px solid #BFDBFE; }
+
+[data-theme="dark"] .fs-alert-error { background: rgba(239, 68, 68, 0.15); color: #FCA5A5; border-color: rgba(239, 68, 68, 0.3); }
+[data-theme="dark"] .fs-alert-success { background: rgba(16, 185, 129, 0.15); color: #6EE7B7; border-color: rgba(16, 185, 129, 0.3); }
+
+.fs-badge {
+  display: inline-flex; align-items: center; gap: var(--fs-s-1);
+  padding: 4px 10px; border-radius: var(--fs-r-full);
+  font-size: 12px; font-weight: 600;
+  background: var(--fs-primary-soft); color: var(--fs-primary);
+}
+.fs-badge-secondary { background: var(--fs-secondary-soft); color: var(--fs-secondary); }
+.fs-badge-accent { background: var(--fs-accent-soft); color: #B56E00; }
+
+.fs-spinner {
+  width: 20px; height: 20px;
+  border: 2.5px solid var(--fs-primary-soft);
+  border-top-color: var(--fs-primary);
+  border-radius: 50%;
+  animation: fs-spin 0.8s linear infinite;
+}
+@keyframes fs-spin { to { transform: rotate(360deg); } }
+
+#blazor-error-ui {
+  background: var(--fs-danger); color: white;
+  bottom: 0; box-shadow: var(--fs-sh-lg);
+  display: none; left: 0; padding: var(--fs-s-4);
+  position: fixed; width: 100%; z-index: 1000;
+}
+#blazor-error-ui .dismiss { cursor: pointer; position: absolute; left: 0.75rem; top: 0.5rem; }
+.validation-message { color: var(--fs-danger); font-size: 13px; margin-top: 4px; }

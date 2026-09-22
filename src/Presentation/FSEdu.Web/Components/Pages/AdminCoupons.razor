@@ -1,0 +1,221 @@
+@page "/admin/coupons"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject NavigationManager Nav
+
+<PageTitle>الكوبونات — FSEdu</PageTitle>
+
+<div class="cps-page">
+    <div class="fs-container">
+        <header class="cps-head">
+            <h1>🏷️ الكوبونات</h1>
+            <button class="fs-btn fs-btn-primary fs-btn-sm" @onclick="() => _showForm = !_showForm">
+                @(_showForm ? "إغلاق" : "➕ كوبون جديد")
+            </button>
+        </header>
+
+        @if (_showForm)
+        {
+            <div class="fs-card cp-form">
+                <h3>إنشاء كوبون</h3>
+
+                <div class="cp-grid">
+                    <div>
+                        <label>الكود</label>
+                        <input type="text" class="cp-input" maxlength="50" placeholder="SAVE25"
+                               @bind="_code" @bind:event="oninput" />
+                        <small class="fs-text-subtle">حروف وأرقام إنجليزية وشُرَط فقط</small>
+                    </div>
+                    <div>
+                        <label>نوع الخصم</label>
+                        <select class="cp-input" @bind="_kind">
+                            <option value="pct">نسبة %</option>
+                            <option value="fixed">مبلغ ثابت</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label>القيمة</label>
+                        <input type="number" class="cp-input" min="1"
+                               max="@(_kind == "pct" ? 100 : 100000)"
+                               step="0.01"
+                               @bind="_value" />
+                        <small class="fs-text-subtle">@(_kind == "pct" ? "بين 1 و 100" : "بالجنيه")</small>
+                    </div>
+                    <div>
+                        <label>صالح حتى (اختياري)</label>
+                        <input type="date" class="cp-input" @bind="_validUntil" />
+                    </div>
+                    <div>
+                        <label>أقصى عدد استخدامات (اختياري)</label>
+                        <input type="number" class="cp-input" min="1" @bind="_maxUses" />
+                    </div>
+                </div>
+
+                @if (!string.IsNullOrEmpty(_error))
+                {
+                    <div class="fs-alert fs-alert-error">@_error</div>
+                }
+
+                <div class="cp-actions">
+                    <button class="fs-btn fs-btn-primary" @onclick="Create" disabled="@_saving">
+                        @(_saving ? "جارٍ الحفظ..." : "حفظ")
+                    </button>
+                    <button class="fs-btn fs-btn-outline" @onclick="() => _showForm = false">إلغاء</button>
+                </div>
+            </div>
+        }
+
+        @if (!_loaded)
+        {
+            <div class="fs-center" style="padding:60px"><span class="fs-spinner"></span></div>
+        }
+        else if (_coupons.Count == 0)
+        {
+            <div class="fs-card empty">
+                <div style="font-size:64px">🎟️</div>
+                <h3>لا توجد كوبونات بعد</h3>
+                <p class="fs-text-muted">أنشئ أول كوبون من الزر أعلاه.</p>
+            </div>
+        }
+        else
+        {
+            <div class="cps-list">
+                @foreach (var c in _coupons)
+                {
+                    var soonExp = c.ValidUntilUtc.HasValue && c.ValidUntilUtc.Value < DateTime.UtcNow.AddDays(7);
+                    var isExpired = c.ValidUntilUtc.HasValue && c.ValidUntilUtc.Value < DateTime.UtcNow;
+                    var isExhausted = c.MaxUses.HasValue && c.UsedCount >= c.MaxUses.Value;
+                    <article class="cp-item fs-card @(c.Active && !isExpired && !isExhausted ? "active" : "inactive")">
+                        <div class="cp-code">
+                            <span class="cp-code-text">@c.Code</span>
+                            @if (!c.Active) { <span class="cp-tag off">معطّل</span> }
+                            else if (isExpired) { <span class="cp-tag off">منتهي</span> }
+                            else if (isExhausted) { <span class="cp-tag off">انتهى الرصيد</span> }
+                            else if (soonExp) { <span class="cp-tag warn">ينتهي قريبًا</span> }
+                            else { <span class="cp-tag ok">فعّال</span> }
+                        </div>
+                        <div class="cp-discount">
+                            @if (c.DiscountPct.HasValue)
+                            { <strong>@c.DiscountPct.Value%</strong> }
+                            @if (c.DiscountFixed.HasValue)
+                            { <strong>@c.DiscountFixed.Value.ToString("0.##") جنيه</strong> }
+                        </div>
+                        <div class="cp-meta">
+                            <span>🧮 استُخدم <strong>@c.UsedCount</strong>@(c.MaxUses.HasValue ? $" / {c.MaxUses.Value}" : "") مرة</span>
+                            @if (c.ValidUntilUtc.HasValue)
+                            { <span>📅 حتى @c.ValidUntilUtc.Value.ToLocalTime().ToString("yyyy/MM/dd")</span> }
+                        </div>
+                        @if (c.Active)
+                        {
+                            <button class="fs-btn fs-btn-outline fs-btn-sm" @onclick="() => Deactivate(c.Id)">
+                                إيقاف
+                            </button>
+                        }
+                    </article>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .cps-page { padding: var(--fs-s-8) 0; min-height: calc(100vh - 72px); }
+    .cps-head { display: flex; justify-content: space-between; align-items: center; gap: var(--fs-s-2); margin-bottom: var(--fs-s-4); flex-wrap: wrap; }
+    .cps-head h1 { margin: 0; font-size: 26px; }
+
+    .cp-form { padding: var(--fs-s-5); margin-bottom: var(--fs-s-4); }
+    .cp-form h3 { margin: 0 0 var(--fs-s-3); font-size: 17px; }
+    .cp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--fs-s-3); }
+    .cp-grid label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+    .cp-input { width: 100%; padding: var(--fs-s-2) var(--fs-s-3); border: 1px solid var(--fs-border); border-radius: var(--fs-r-md); font-size: 14px; }
+    .cp-input:focus { outline: none; border-color: var(--fs-primary); }
+    .cp-actions { margin-top: var(--fs-s-3); display: flex; gap: var(--fs-s-2); }
+
+    .empty { padding: 60px var(--fs-s-5); text-align: center; }
+    .empty h3 { margin: var(--fs-s-3) 0 var(--fs-s-2); }
+
+    .cps-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--fs-s-3); }
+    .cp-item { padding: var(--fs-s-4); display: flex; flex-direction: column; gap: var(--fs-s-2); border-right: 4px solid var(--fs-border); }
+    .cp-item.active { border-right-color: var(--fs-success); }
+    .cp-item.inactive { opacity: 0.7; border-right-color: var(--fs-text-muted); }
+    .cp-code { display: flex; gap: var(--fs-s-2); align-items: center; flex-wrap: wrap; }
+    .cp-code-text { font-family: monospace; font-size: 18px; font-weight: 800; color: var(--fs-primary); direction: ltr; letter-spacing: 1px; }
+    .cp-tag { font-size: 11px; padding: 2px 8px; border-radius: var(--fs-r-full); }
+    .cp-tag.ok { background: #DCFCE7; color: #166534; }
+    .cp-tag.warn { background: #FEF3C7; color: #92400E; }
+    .cp-tag.off { background: #FEE2E2; color: #991B1B; }
+    .cp-discount strong { font-size: 22px; color: var(--fs-primary); font-weight: 800; }
+    .cp-meta { display: flex; gap: var(--fs-s-3); font-size: 12px; color: var(--fs-text-muted); flex-wrap: wrap; }
+    .cp-meta strong { color: var(--fs-text); }
+</style>
+
+@code {
+    private List<FSEdu.Shared.Contracts.Admin.CouponDto> _coupons = new();
+    private bool _loaded;
+    private bool _showForm;
+
+    private string _code = "";
+    private string _kind = "pct";
+    private decimal _value = 10m;
+    private DateTime? _validUntil;
+    private int? _maxUses;
+    private bool _saving;
+    private string? _error;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            if (Auth.CurrentUser is null || !Auth.IsInRole("Admin"))
+            {
+                Nav.NavigateTo("/login");
+                return;
+            }
+            await Load();
+        }
+    }
+
+    private async Task Load()
+    {
+        _coupons = await Api.GetCouponsListAsync();
+        _loaded = true;
+        StateHasChanged();
+    }
+
+    private async Task Create()
+    {
+        _error = null;
+        if (string.IsNullOrWhiteSpace(_code) || _code.Trim().Length < 3)
+        { _error = "الكود قصير جدًا"; return; }
+        if (_value <= 0)
+        { _error = "القيمة يجب أن تكون أكبر من صفر"; return; }
+        if (_kind == "pct" && _value > 100)
+        { _error = "النسبة لا تتجاوز 100%"; return; }
+
+        var req = new FSEdu.Shared.Contracts.Admin.CreateCouponRequest(
+            _code.Trim().ToUpperInvariant(),
+            _kind == "pct" ? _value : (decimal?)null,
+            _kind == "fixed" ? _value : (decimal?)null,
+            _validUntil?.ToUniversalTime(),
+            _maxUses);
+
+        _saving = true; StateHasChanged();
+        try
+        {
+            var (id, err) = await Api.CreateCouponAsync(req);
+            if (err is not null) { _error = err.Message ?? "تعذّر الحفظ"; return; }
+            _code = ""; _value = 10m; _validUntil = null; _maxUses = null;
+            _showForm = false;
+            await Load();
+        }
+        finally { _saving = false; StateHasChanged(); }
+    }
+
+    private async Task Deactivate(int id)
+    {
+        var ok = await Api.DeactivateCouponAsync(id);
+        if (ok) await Load();
+    }
+}

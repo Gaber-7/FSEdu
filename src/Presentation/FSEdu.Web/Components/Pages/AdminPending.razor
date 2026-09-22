@@ -1,0 +1,167 @@
+@page "/admin/teachers/pending"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject NavigationManager Nav
+
+<PageTitle>مراجعة طلبات المدرسين — Admin</PageTitle>
+
+<div class="admin-page">
+    <div class="fs-container">
+        <div class="admin-head">
+            <div>
+                <h1>⏳ طلبات المدرسين بانتظار الموافقة</h1>
+                <p class="fs-text-muted">راجع البيانات واعتمد أو ارفض كل طلب</p>
+            </div>
+            <button class="fs-btn fs-btn-outline" @onclick="Load">🔄 تحديث</button>
+        </div>
+
+        @if (!Auth.IsAuthenticated)
+        {
+            <div class="fs-alert fs-alert-error">
+                يجب تسجيل الدخول بحساب Admin. <a href="/login">تسجيل الدخول</a>
+            </div>
+        }
+        else if (!Auth.IsInRole("Admin"))
+        {
+            <div class="fs-alert fs-alert-error">
+                هذه الصفحة للمشرفين الإداريين فقط.
+            </div>
+        }
+        else if (_loading)
+        {
+            <div class="fs-center" style="padding: 60px;"><span class="fs-spinner"></span></div>
+        }
+        else if (_teachers is null || !_teachers.Any())
+        {
+            <div class="fs-card fs-center" style="padding: 80px; text-align: center;">
+                <div style="font-size: 64px;">✅</div>
+                <h3>لا توجد طلبات معلّقة</h3>
+                <p class="fs-text-muted">كل طلبات المدرسين تمت مراجعتها.</p>
+            </div>
+        }
+        else
+        {
+            <div class="fs-grid fs-grid-2">
+                @foreach (var t in _teachers)
+                {
+                    <div class="fs-card teacher-card">
+                        <div class="card-head">
+                            <div>
+                                <h3>@t.FullName</h3>
+                                <p class="fs-text-muted">@t.Phone @(string.IsNullOrEmpty(t.Email) ? "" : " · " + t.Email)</p>
+                            </div>
+                            <span class="fs-badge">@t.YearsOfExperience سنة خبرة</span>
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(t.Bio))
+                        {
+                            <p class="bio">@t.Bio</p>
+                        }
+
+                        <div class="teacher-tags">
+                            <strong>المواد:</strong>
+                            @foreach (var s in t.SubjectNames)
+                            {
+                                <span class="tag tag-primary">@s</span>
+                            }
+                        </div>
+
+                        <div class="teacher-tags">
+                            <strong>المناطق:</strong>
+                            @foreach (var r in t.RegionNames)
+                            {
+                                <span class="tag tag-secondary">@r</span>
+                            }
+                        </div>
+
+                        @if (t.Qualifications.Any())
+                        {
+                            <div class="quals">
+                                <strong>المؤهلات:</strong>
+                                <ul>
+                                    @foreach (var q in t.Qualifications)
+                                    {
+                                        <li>@q.Title — @q.Institution (@q.Year)</li>
+                                    }
+                                </ul>
+                            </div>
+                        }
+
+                        <div class="card-actions">
+                            <button class="fs-btn fs-btn-primary" @onclick="() => Approve(t.Id)"
+                                    disabled="@(_processing == t.Id)">
+                                @if (_processing == t.Id) { <span class="fs-spinner"></span> }
+                                ✓ اعتماد
+                            </button>
+                            <button class="fs-btn fs-btn-outline danger-btn" @onclick="() => Reject(t.Id)"
+                                    disabled="@(_processing == t.Id)">
+                                ✕ رفض
+                            </button>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .admin-page { padding: var(--fs-s-12) 0; min-height: calc(100vh - 72px); }
+    .admin-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--fs-s-8); flex-wrap: wrap; gap: var(--fs-s-3); }
+    .teacher-card { display: flex; flex-direction: column; gap: var(--fs-s-3); }
+    .card-head { display: flex; justify-content: space-between; align-items: start; gap: var(--fs-s-3); }
+    .card-head h3 { margin: 0 0 4px 0; font-size: 18px; }
+    .bio { color: var(--fs-text-muted); font-size: 14px; margin: 0; padding: var(--fs-s-2) 0; }
+    .teacher-tags { display: flex; flex-wrap: wrap; gap: var(--fs-s-1); align-items: center; font-size: 13px; }
+    .teacher-tags strong { color: var(--fs-text-muted); margin-left: var(--fs-s-1); }
+    .tag { padding: 2px 10px; border-radius: var(--fs-r-full); font-size: 12px; font-weight: 600; }
+    .tag-primary { background: var(--fs-primary-soft); color: var(--fs-primary); }
+    .tag-secondary { background: var(--fs-secondary-soft); color: var(--fs-secondary); }
+    .quals { font-size: 14px; }
+    .quals ul { margin: 4px 0 0 0; padding-right: var(--fs-s-5); color: var(--fs-text-muted); }
+    .card-actions { display: flex; gap: var(--fs-s-2); margin-top: auto; padding-top: var(--fs-s-3); border-top: 1px solid var(--fs-border); }
+    .card-actions .fs-btn { flex: 1; }
+    .danger-btn { color: var(--fs-danger); border-color: var(--fs-danger); }
+    .danger-btn:hover { background: var(--fs-danger); color: white !important; }
+</style>
+
+@code {
+    private List<FSEdu.Shared.Contracts.Admin.PendingTeacherDto>? _teachers;
+    private bool _loading;
+    private Guid? _processing;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            await Load();
+        }
+    }
+
+    private async Task Load()
+    {
+        if (!Auth.IsAuthenticated || !Auth.IsInRole("Admin")) { StateHasChanged(); return; }
+        _loading = true; StateHasChanged();
+        try { _teachers = await Api.GetPendingTeachersAsync(); }
+        catch { _teachers = new(); }
+        finally { _loading = false; StateHasChanged(); }
+    }
+
+    private async Task Approve(Guid id)
+    {
+        _processing = id; StateHasChanged();
+        try {
+            if (await Api.ApproveTeacherAsync(id, null)) await Load();
+        } finally { _processing = null; }
+    }
+
+    private async Task Reject(Guid id)
+    {
+        _processing = id; StateHasChanged();
+        try {
+            if (await Api.RejectTeacherAsync(id, "Rejected by admin")) await Load();
+        } finally { _processing = null; }
+    }
+}

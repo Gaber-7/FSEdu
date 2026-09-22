@@ -1,0 +1,487 @@
+@page "/pricing"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject NavigationManager Nav
+
+<PageTitle>الأسعار والاشتراكات — FSEdu</PageTitle>
+
+<div class="pricing-page">
+    <div class="fs-container">
+        <div class="pricing-hero">
+            <span class="fs-badge fs-badge-accent">💰 أسعار شفّافة ومرنة</span>
+            <h1>اختر الخطة المناسبة لطالبك</h1>
+            <p class="fs-text-muted">3 أنواع اشتراك تناسب جميع الميزانيات — اختر حسب المرحلة والمواد</p>
+        </div>
+
+        @if (_pricing is null)
+        {
+            <div class="fs-center" style="padding: 100px;"><span class="fs-spinner"></span></div>
+        }
+        else
+        {
+            @if (_pricing.Campaigns is { Length: > 0 })
+            {
+                <div class="campaigns-banner-row">
+                    @foreach (var c in _pricing.Campaigns.Take(3))
+                    {
+                        var daysLeft = (int)Math.Max(0, Math.Ceiling((c.ValidUntilUtc - DateTime.UtcNow).TotalDays));
+                        <div class="campaign-banner">
+                            <div class="cb-discount">
+                                <strong>-@c.DiscountPct.ToString("0.##")%</strong>
+                                <small>خصم</small>
+                            </div>
+                            <div class="cb-text">
+                                <strong>🎉 @c.Title</strong>
+                                <small>
+                                    @(c.Scope switch
+                                    {
+                                        "All" => "على كل الاشتراكات",
+                                        "Stage" => $"على مرحلة {c.ScopeName}",
+                                        "Subject" => $"على مادة {c.ScopeName}",
+                                        _ => ""
+                                    })
+                                    @if (daysLeft > 0) { <text> · باقي @daysLeft يوم</text> }
+                                </small>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+
+            <div class="stage-tabs">
+                @foreach (var s in _pricing.Stages)
+                {
+                    <button class="tab @(_selectedStageId == s.StageId ? "active" : "")"
+                            @onclick="() => SelectStage(s.StageId)">
+                        @s.StageName
+                    </button>
+                }
+            </div>
+
+            var stage = _pricing.Stages.FirstOrDefault(s => s.StageId == _selectedStageId);
+            if (stage is not null)
+            {
+                <div class="plans-grid">
+                    <!-- Per-subject monthly -->
+                    <div class="plan-card">
+                        <div class="plan-head">
+                            <span class="plan-icon" style="background: var(--fs-primary-soft); color: var(--fs-primary);">📖</span>
+                            <h3>مادة / شهر</h3>
+                            <p class="fs-text-muted">اختر مادة واحدة — تجديد شهري مرن</p>
+                        </div>
+                        <div class="plan-price-sample">
+                            @{
+                                var monthlyMin = stage.Subjects.Min(s => s.MonthlyPriceEgp);
+                                var monthlyBestPct = stage.Subjects.Max(s => s.SubjectDiscountPct);
+                                var monthlyDiscounted = monthlyMin * (100m - monthlyBestPct) / 100m;
+                            }
+                            <span>يبدأ من</span>
+                            @if (monthlyBestPct > 0)
+                            {
+                                <div class="price-with-discount">
+                                    <s class="orig-price">@monthlyMin.ToString("0.##")</s>
+                                    <strong>@monthlyDiscounted.ToString("0.##")</strong>
+                                    <span class="discount-badge">-@monthlyBestPct.ToString("0.##")%</span>
+                                </div>
+                            }
+                            else
+                            {
+                                <strong>@monthlyMin</strong>
+                            }
+                            <small>ج.م / شهر / مادة</small>
+                        </div>
+                        <ul class="plan-features">
+                            <li>✓ مادة واحدة من اختيارك</li>
+                            <li>✓ جميع الحصص المباشرة للمادة</li>
+                            <li>✓ الواجبات والاختبارات</li>
+                            <li>✓ تجديد تلقائي شهري</li>
+                            <li>✓ إلغاء في أي وقت</li>
+                        </ul>
+                        <button class="fs-btn fs-btn-outline fs-btn-block"
+                                @onclick="() => OpenMonthly(stage)">
+                            اختر مادة
+                        </button>
+                    </div>
+
+                    <!-- Per-subject term -->
+                    <div class="plan-card featured">
+                        <div class="featured-tag">الأكثر اختيارًا</div>
+                        <div class="plan-head">
+                            <span class="plan-icon" style="background: var(--fs-secondary-soft); color: var(--fs-secondary);">📚</span>
+                            <h3>مادة / ترم</h3>
+                            <p class="fs-text-muted">مادة واحدة لترم كامل — وفّر ~20%</p>
+                        </div>
+                        <div class="plan-price-sample">
+                            @{
+                                var termMin = stage.Subjects.Min(s => s.TermPriceEgp);
+                                var termBestPct = stage.Subjects.Max(s => s.SubjectDiscountPct);
+                                var termDiscounted = termMin * (100m - termBestPct) / 100m;
+                            }
+                            <span>يبدأ من</span>
+                            @if (termBestPct > 0)
+                            {
+                                <div class="price-with-discount">
+                                    <s class="orig-price">@termMin.ToString("0.##")</s>
+                                    <strong>@termDiscounted.ToString("0.##")</strong>
+                                    <span class="discount-badge">-@termBestPct.ToString("0.##")%</span>
+                                </div>
+                            }
+                            else
+                            {
+                                <strong>@termMin</strong>
+                            }
+                            <small>ج.م / ترم / مادة</small>
+                        </div>
+                        <ul class="plan-features">
+                            <li>✓ مادة واحدة لترم كامل (5 شهور)</li>
+                            <li>✓ جميع الحصص + التسجيلات</li>
+                            <li>✓ توفير 20% مقارنة بالشهري</li>
+                            <li>✓ دفعة واحدة — لا تجديد</li>
+                            <li>✓ مذكرات PDF مجانية</li>
+                        </ul>
+                        <button class="fs-btn fs-btn-primary fs-btn-block"
+                                @onclick="() => OpenTerm(stage)">
+                            اختر مادة
+                        </button>
+                    </div>
+
+                    <!-- All subjects term -->
+                    <div class="plan-card premium">
+                        <div class="featured-tag gold">الأفضل قيمةً 🔥</div>
+                        <div class="plan-head">
+                            <span class="plan-icon" style="background: var(--fs-accent-soft); color: #B56E00;">🎓</span>
+                            <h3>جميع المواد / ترم</h3>
+                            <p class="fs-text-muted">كل مواد @stage.StageName لترم كامل</p>
+                        </div>
+                        <div class="plan-price-sample">
+                            @if (stage.FullTermPriceEgp.HasValue && stage.StageDiscountPct > 0)
+                            {
+                                var bundleDiscounted = stage.FullTermPriceEgp.Value * (100m - stage.StageDiscountPct) / 100m;
+                                <div class="price-with-discount">
+                                    <s class="orig-price">@stage.FullTermPriceEgp.Value.ToString("0.##")</s>
+                                    <strong>@bundleDiscounted.ToString("0.##")</strong>
+                                    <span class="discount-badge">-@stage.StageDiscountPct.ToString("0.##")%</span>
+                                </div>
+                            }
+                            else
+                            {
+                                <strong>@stage.FullTermPriceEgp</strong>
+                            }
+                            <small>ج.م / ترم شامل</small>
+                        </div>
+                        <ul class="plan-features">
+                            <li>✓ جميع مواد المرحلة (@stage.Subjects.Length مواد)</li>
+                            <li>✓ توفير ~60% مقارنة بالإشتراك الفردي</li>
+                            <li>✓ حصص مباشرة + مسجّلة</li>
+                            <li>✓ واجبات + اختبارات + تقارير</li>
+                            <li>✓ خدمة "اسأل مدرس" مفتوحة</li>
+                            <li>✓ الأولوية في الدعم الفني</li>
+                        </ul>
+                        <button class="fs-btn fs-btn-secondary fs-btn-block"
+                                @onclick="() => SubscribeStage(stage)">
+                            اشترك الآن
+                        </button>
+                    </div>
+                </div>
+
+                <div class="subjects-table fs-card">
+                    <h3>أسعار مواد @stage.StageName بالتفصيل</h3>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>المادة</th>
+                                <th>شهري</th>
+                                <th>ترم كامل</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var s in stage.Subjects)
+                            {
+                                <tr>
+                                    <td>
+                                        <span class="color-dot" style="background: @(s.ColorHex ?? "#ccc")"></span>
+                                        @s.SubjectName
+                                    </td>
+                                    <td><strong>@s.MonthlyPriceEgp</strong> ج.م</td>
+                                    <td><strong>@s.TermPriceEgp</strong> ج.م</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        }
+
+        @* Subscribe Modal *@
+        @if (_modalType is not null && _modalStage is not null)
+        {
+            <div class="modal-backdrop" @onclick="CloseModal">
+                <div class="modal fs-card fs-card-elevated" @onclick:stopPropagation="true">
+                    <h3>
+                        @(_modalType == "SubjectMonthly" ? "اشتراك شهري لمادة" : "اشتراك ترمي لمادة")
+                    </h3>
+                    <p class="fs-text-muted">المرحلة: @_modalStage.StageName</p>
+
+                    @if (!Auth.IsAuthenticated)
+                    {
+                        <div class="fs-alert fs-alert-error">
+                            يجب تسجيل الدخول أولاً. <a href="/login">تسجيل الدخول</a>
+                        </div>
+                    }
+                    else
+                    {
+                        @if (!string.IsNullOrEmpty(_modalError))
+                        {
+                            <div class="fs-alert fs-alert-error"><span>⚠️</span><span>@_modalError</span></div>
+                        }
+
+                        <div class="fs-form-group">
+                            <label class="fs-label">اختر المادة</label>
+                            <select class="fs-select" @bind="_modalSubjectId">
+                                <option value="0">-- اختر المادة --</option>
+                                @foreach (var s in _modalStage.Subjects)
+                                {
+                                    var price = _modalType == "SubjectMonthly" ? s.MonthlyPriceEgp : s.TermPriceEgp;
+                                    <option value="@s.SubjectId">@s.SubjectName — @price ج.م</option>
+                                }
+                            </select>
+                        </div>
+
+                        @if (_modalType == "SubjectTerm")
+                        {
+                            <div class="fs-form-group">
+                                <label class="fs-label">الترم</label>
+                                <select class="fs-select" @bind="_modalTerm">
+                                    <option value="First">الترم الأول</option>
+                                    <option value="Second">الترم الثاني</option>
+                                    <option value="Annual">ترم كامل (سنوي)</option>
+                                </select>
+                            </div>
+                        }
+
+                        <div class="modal-actions">
+                            <button class="fs-btn fs-btn-outline" @onclick="CloseModal">إلغاء</button>
+                            <button class="fs-btn fs-btn-primary" @onclick="ConfirmSubscribe" disabled="@_processing">
+                                @if (_processing) { <span class="fs-spinner"></span> }
+                                تأكيد الاشتراك 💳
+                            </button>
+                        </div>
+                        <small class="fs-text-subtle" style="display:block; text-align:center; margin-top: var(--fs-s-3);">
+                            💡 الدفع مُحاكى في وضع التطوير (بدون بوابة حقيقية)
+                        </small>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .pricing-page { padding: var(--fs-s-10) 0 var(--fs-s-16); }
+
+    .pricing-hero { text-align: center; margin-bottom: var(--fs-s-10); }
+    .pricing-hero h1 { font-size: clamp(2rem, 4vw, 3rem); margin: var(--fs-s-4) 0 var(--fs-s-2); }
+
+    .stage-tabs {
+        display: flex; flex-wrap: wrap; gap: var(--fs-s-2);
+        justify-content: center; margin-bottom: var(--fs-s-8);
+        padding: var(--fs-s-2);
+        background: var(--fs-surface); border: 1px solid var(--fs-border);
+        border-radius: var(--fs-r-full); max-width: max-content; margin-inline: auto;
+    }
+    .tab {
+        padding: 10px 18px; border: none; border-radius: var(--fs-r-full);
+        background: transparent; color: var(--fs-text-muted);
+        font-family: var(--fs-font-body); font-weight: 600; font-size: 14px;
+        cursor: pointer; transition: all var(--fs-trans);
+    }
+    .tab:hover { color: var(--fs-primary); }
+    .tab.active { background: var(--fs-primary); color: white; }
+
+    .plans-grid {
+        display: grid; grid-template-columns: repeat(3, 1fr);
+        gap: var(--fs-s-6); margin-bottom: var(--fs-s-10);
+    }
+    @@media (max-width: 900px) { .plans-grid { grid-template-columns: 1fr; } }
+
+    .plan-card {
+        background: var(--fs-surface);
+        border: 2px solid var(--fs-border);
+        border-radius: var(--fs-r-xl);
+        padding: var(--fs-s-8);
+        display: flex; flex-direction: column; gap: var(--fs-s-4);
+        position: relative;
+        transition: all var(--fs-trans);
+    }
+    .plan-card:hover { transform: translateY(-4px); box-shadow: var(--fs-sh-lg); }
+    .plan-card.featured { border-color: var(--fs-primary); }
+    .plan-card.premium {
+        background: linear-gradient(135deg, rgba(255,181,71,0.08), rgba(91,79,229,0.08));
+        border-color: var(--fs-accent);
+    }
+
+    .featured-tag {
+        position: absolute; top: -14px; right: 24px;
+        background: var(--fs-primary); color: white;
+        padding: 4px 12px; border-radius: var(--fs-r-full);
+        font-size: 12px; font-weight: 700;
+    }
+    .featured-tag.gold { background: linear-gradient(135deg, var(--fs-accent), #D97706); }
+
+    .plan-head h3 { font-size: 22px; margin: var(--fs-s-3) 0 var(--fs-s-2); }
+    .plan-icon {
+        width: 56px; height: 56px; border-radius: var(--fs-r-md);
+        display: flex; align-items: center; justify-content: center;
+        font-size: 28px;
+    }
+
+    .plan-price-sample {
+        padding: var(--fs-s-4); background: var(--fs-bg);
+        border-radius: var(--fs-r-md); text-align: center;
+    }
+    .plan-price-sample span { font-size: 13px; color: var(--fs-text-muted); display: block; }
+    .plan-price-sample strong {
+        font-size: 42px; font-weight: 900;
+        color: var(--fs-primary); line-height: 1; margin: 4px 0;
+        display: block;
+    }
+    .plan-price-sample small { font-size: 13px; color: var(--fs-text-muted); }
+
+    .plan-features { list-style: none; padding: 0; margin: 0; flex: 1; }
+    .plan-features li { padding: 6px 0; font-size: 14px; }
+
+    .subjects-table { margin-bottom: var(--fs-s-10); }
+    .subjects-table h3 { margin-bottom: var(--fs-s-4); }
+    .subjects-table table { width: 100%; border-collapse: collapse; }
+    .subjects-table th, .subjects-table td {
+        padding: var(--fs-s-3); text-align: right;
+        border-bottom: 1px solid var(--fs-border);
+    }
+    .subjects-table th {
+        font-size: 13px; color: var(--fs-text-muted);
+        font-weight: 600; text-transform: uppercase;
+    }
+    .subjects-table td strong { color: var(--fs-primary); }
+    .color-dot {
+        display: inline-block; width: 12px; height: 12px;
+        border-radius: 50%; margin-left: var(--fs-s-2);
+        vertical-align: middle;
+    }
+
+    .modal-backdrop {
+        position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+        display: flex; align-items: center; justify-content: center;
+        padding: var(--fs-s-4); z-index: 100; backdrop-filter: blur(4px);
+    }
+    .modal { max-width: 520px; width: 100%; }
+    .modal h3 { margin-top: 0; }
+    .modal-actions { display: flex; gap: var(--fs-s-2); justify-content: flex-end; margin-top: var(--fs-s-4); }
+
+    .campaigns-banner-row { display: flex; gap: var(--fs-s-3); flex-wrap: wrap; margin-bottom: var(--fs-s-6); }
+    .campaign-banner {
+        flex: 1 1 280px;
+        display: flex; align-items: center; gap: var(--fs-s-3);
+        padding: var(--fs-s-3) var(--fs-s-4);
+        background: linear-gradient(135deg, #FEF3C7 0%, #FECACA 100%);
+        border: 1px solid #F59E0B;
+        border-radius: var(--fs-r-md);
+        box-shadow: 0 4px 12px rgba(245,158,11,0.18);
+    }
+    .cb-discount {
+        text-align: center;
+        padding: 6px 14px;
+        background: white; border-radius: var(--fs-r-md);
+        flex-shrink: 0;
+    }
+    .cb-discount strong { display: block; font-size: 22px; font-weight: 900; color: var(--fs-danger); font-family: monospace; direction: ltr; }
+    .cb-discount small { font-size: 10px; color: var(--fs-text-muted); }
+    .cb-text strong { display: block; font-size: 15px; color: #92400E; }
+    .cb-text small { display: block; font-size: 12px; color: #B45309; }
+
+    .price-with-discount { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; justify-content: center; }
+    .orig-price { color: var(--fs-text-muted); font-size: 18px; }
+    .discount-badge {
+        background: var(--fs-danger); color: white;
+        padding: 2px 8px; border-radius: var(--fs-r-full);
+        font-size: 11px; font-weight: 800;
+        font-family: monospace; direction: ltr;
+    }
+</style>
+
+@code {
+    private FSEdu.Shared.Contracts.Subscriptions.PricingResponse? _pricing;
+    private int _selectedStageId;
+
+    private FSEdu.Shared.Contracts.Subscriptions.StagePricingDto? _modalStage;
+    private string? _modalType;
+    private int _modalSubjectId;
+    private string _modalTerm = "First";
+    private bool _processing;
+    private string? _modalError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _pricing = await Api.GetPricingAsync();
+            _selectedStageId = _pricing?.Stages.FirstOrDefault()?.StageId ?? 0;
+        }
+        catch { /* API down */ }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) { await Auth.RestoreAsync(); StateHasChanged(); }
+    }
+
+    private void SelectStage(int id) => _selectedStageId = id;
+
+    private void OpenSubscribe(FSEdu.Shared.Contracts.Subscriptions.StagePricingDto stage, string type)
+    {
+        _modalStage = stage;
+        _modalType = type;
+        _modalSubjectId = 0;
+        _modalError = null;
+    }
+
+    private void OpenMonthly(FSEdu.Shared.Contracts.Subscriptions.StagePricingDto stage) => OpenSubscribe(stage, "SubjectMonthly");
+    private void OpenTerm(FSEdu.Shared.Contracts.Subscriptions.StagePricingDto stage) => OpenSubscribe(stage, "SubjectTerm");
+
+    private void CloseModal() { _modalType = null; _modalStage = null; _modalError = null; }
+
+    private void ConfirmSubscribe()
+    {
+        if (_modalSubjectId == 0) { _modalError = "اختر مادة أولاً"; return; }
+        if (!Auth.IsAuthenticated) { Nav.NavigateTo("/login"); return; }
+
+        var qs = new List<string> { $"type={_modalType}", $"subjectId={_modalSubjectId}" };
+        if (_modalType == "SubjectTerm") qs.Add($"term={_modalTerm}");
+        CloseModal();
+        Nav.NavigateTo($"/subscribe?{string.Join("&", qs)}");
+    }
+
+    private void SubscribeStage(FSEdu.Shared.Contracts.Subscriptions.StagePricingDto stage)
+    {
+        if (!Auth.IsAuthenticated) { Nav.NavigateTo("/login"); return; }
+        Nav.NavigateTo($"/subscribe?type=StageFullTerm&stageId={stage.StageId}&term=First");
+    }
+
+    private async Task DeprecatedConfirmSubscribe()
+    {
+        // Legacy direct-subscribe kept to avoid breaking interface; actual UX uses /subscribe page.
+        if (_modalSubjectId == 0) { _modalError = "اختر مادة أولاً"; return; }
+        _processing = true; _modalError = null;
+        try
+        {
+            var req = new FSEdu.Shared.Contracts.Subscriptions.SubscribeRequest(
+                _modalType!, _modalSubjectId, null,
+                _modalType == "SubjectTerm" ? _modalTerm : null);
+
+            var (data, error) = await Api.SubscribeAsync(req);
+            if (error is null)
+                Nav.NavigateTo("/student/subscriptions");
+        }
+        finally { _processing = false; }
+    }
+}

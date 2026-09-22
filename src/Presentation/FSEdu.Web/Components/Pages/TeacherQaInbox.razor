@@ -1,0 +1,237 @@
+@page "/teacher/qa-inbox"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject NavigationManager Nav
+
+<PageTitle>صندوق الأسئلة — FSEdu</PageTitle>
+
+<div class="qa-page">
+    <div class="fs-container">
+        <header class="qa-head">
+            <h1>📨 صندوق الأسئلة</h1>
+            <p class="fs-text-muted">كل أسئلة طلابك على دروسك في مكان واحد.</p>
+        </header>
+
+        @if (!_loaded)
+        {
+            <div class="fs-center" style="padding:80px"><span class="fs-spinner"></span></div>
+        }
+        else if (_data is null)
+        {
+            <div class="fs-alert fs-alert-error">تعذّر التحميل</div>
+        }
+        else
+        {
+            <div class="qa-stats fs-card">
+                <div class="qa-stat">
+                    <strong>@_data.UnansweredCount</strong>
+                    <span>بانتظار الرد</span>
+                </div>
+                <div class="qa-stat">
+                    <strong>@_data.TotalCount</strong>
+                    <span>إجمالي الأسئلة</span>
+                </div>
+                <div class="qa-tabs">
+                    <button class="qa-tab @(_unansweredOnly ? "active" : "")"
+                            @onclick="() => SetFilter(true)">بانتظار الرد</button>
+                    <button class="qa-tab @(!_unansweredOnly ? "active" : "")"
+                            @onclick="() => SetFilter(false)">الكل</button>
+                </div>
+            </div>
+
+            @if (_data.Questions.Count == 0)
+            {
+                <div class="fs-card empty">
+                    <div style="font-size:64px">@(_unansweredOnly ? "🎉" : "📭")</div>
+                    <h3>@(_unansweredOnly ? "ممتاز! لا توجد أسئلة بانتظار الرد" : "لا توجد أسئلة بعد")</h3>
+                    @if (_unansweredOnly)
+                    {
+                        <button class="fs-btn fs-btn-outline" @onclick="() => SetFilter(false)">عرض الأسئلة المُجابة</button>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="qa-list">
+                    @foreach (var q in _data.Questions)
+                    {
+                        var isAnswered = !string.IsNullOrEmpty(q.AnswerBody);
+                        <article class="qa-item fs-card @(isAnswered ? "answered" : "pending")">
+                            <header>
+                                <div class="qa-meta">
+                                    <a href="/courses/@q.CourseId" class="course-pill">📚 @q.CourseTitle</a>
+                                    <a href="/lessons/@q.LessonId/watch" class="lesson-pill">📖 @q.LessonTitle</a>
+                                </div>
+                                <small class="fs-text-muted">@FormatTime(q.CreatedAtUtc)</small>
+                            </header>
+
+                            <div class="qa-body">
+                                <div class="qa-asker">
+                                    <span class="qa-avatar">@q.AskedByName.FirstOrDefault()</span>
+                                    <strong>@q.AskedByName</strong>
+                                </div>
+                                <p class="qa-text">@q.Body</p>
+                            </div>
+
+                            @if (isAnswered)
+                            {
+                                <div class="qa-answer">
+                                    <strong>💬 ردّك (@FormatTime(q.AnsweredAtUtc!.Value))</strong>
+                                    <p>@q.AnswerBody</p>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="qa-form">
+                                    <textarea rows="3"
+                                              maxlength="4000"
+                                              placeholder="اكتب ردّك هنا..."
+                                              @bind="_answerDrafts[q.Id]"
+                                              @bind:event="oninput"></textarea>
+                                    @if (_errors.TryGetValue(q.Id, out var err) && !string.IsNullOrEmpty(err))
+                                    {
+                                        <div class="fs-alert fs-alert-error">@err</div>
+                                    }
+                                    <button class="fs-btn fs-btn-primary fs-btn-sm"
+                                            @onclick="() => Answer(q.Id)"
+                                            disabled="@(_busy.Contains(q.Id))">
+                                        @(_busy.Contains(q.Id) ? "جارٍ الإرسال..." : "إرسال الرد ←")
+                                    </button>
+                                </div>
+                            }
+                        </article>
+                    }
+                </div>
+            }
+        }
+    </div>
+</div>
+
+<style>
+    .qa-page { padding: var(--fs-s-8) 0; min-height: calc(100vh - 72px); }
+    .qa-head { margin-bottom: var(--fs-s-5); }
+    .qa-head h1 { margin: 0 0 var(--fs-s-1); font-size: 26px; }
+
+    .qa-stats { display: flex; align-items: center; gap: var(--fs-s-5); padding: var(--fs-s-4); margin-bottom: var(--fs-s-4); flex-wrap: wrap; }
+    .qa-stat { display: flex; flex-direction: column; }
+    .qa-stat strong { font-size: 22px; color: var(--fs-primary); font-weight: 800; }
+    .qa-stat span { font-size: 12px; color: var(--fs-text-muted); }
+    .qa-tabs { margin-right: auto; display: flex; gap: var(--fs-s-1); background: var(--fs-bg); padding: 3px; border-radius: var(--fs-r-full); }
+    .qa-tab {
+        background: transparent; border: none; cursor: pointer;
+        padding: 6px 14px; border-radius: var(--fs-r-full);
+        font-size: 13px; font-weight: 600; color: var(--fs-text-muted);
+        transition: all var(--fs-trans);
+    }
+    .qa-tab.active { background: white; color: var(--fs-primary); box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+
+    .empty { padding: 60px var(--fs-s-5); text-align: center; }
+    .empty h3 { margin: var(--fs-s-3) 0 var(--fs-s-3); }
+
+    .qa-list { display: flex; flex-direction: column; gap: var(--fs-s-3); }
+    .qa-item { padding: var(--fs-s-4); border-right: 4px solid var(--fs-border); }
+    .qa-item.pending { border-right-color: var(--fs-accent); }
+    .qa-item.answered { border-right-color: var(--fs-success); opacity: 0.92; }
+    .qa-item header { display: flex; justify-content: space-between; align-items: center; gap: var(--fs-s-2); flex-wrap: wrap; margin-bottom: var(--fs-s-3); }
+    .qa-meta { display: flex; gap: var(--fs-s-2); flex-wrap: wrap; }
+    .course-pill, .lesson-pill {
+        font-size: 12px; padding: 3px 10px; border-radius: var(--fs-r-full);
+        text-decoration: none; background: var(--fs-bg); color: var(--fs-text); border: 1px solid var(--fs-border);
+    }
+    .course-pill:hover, .lesson-pill:hover { color: var(--fs-primary); border-color: var(--fs-primary); }
+
+    .qa-asker { display: flex; align-items: center; gap: var(--fs-s-2); margin-bottom: var(--fs-s-2); }
+    .qa-avatar {
+        width: 28px; height: 28px; border-radius: 50%;
+        background: linear-gradient(135deg, var(--fs-primary), var(--fs-secondary));
+        color: white; font-weight: 700; font-size: 13px;
+        display: flex; align-items: center; justify-content: center;
+    }
+    .qa-asker strong { font-size: 14px; }
+    .qa-text { margin: 0; line-height: 1.7; padding: var(--fs-s-3); background: var(--fs-bg); border-radius: var(--fs-r-md); white-space: pre-wrap; }
+
+    .qa-answer { margin-top: var(--fs-s-3); padding: var(--fs-s-3); background: #ECFDF5; border-radius: var(--fs-r-md); border-right: 3px solid var(--fs-success); }
+    .qa-answer strong { display: block; font-size: 13px; margin-bottom: 4px; color: var(--fs-success); }
+    .qa-answer p { margin: 0; line-height: 1.7; white-space: pre-wrap; }
+
+    .qa-form { margin-top: var(--fs-s-3); display: flex; flex-direction: column; gap: var(--fs-s-2); }
+    .qa-form textarea {
+        width: 100%; padding: var(--fs-s-3);
+        border: 1px solid var(--fs-border); border-radius: var(--fs-r-md);
+        font-family: inherit; font-size: 14px; line-height: 1.7;
+        resize: vertical;
+    }
+    .qa-form textarea:focus { outline: none; border-color: var(--fs-primary); }
+</style>
+
+@code {
+    private FSEdu.Shared.Contracts.Courses.TeacherInboxResponse? _data;
+    private bool _loaded;
+    private bool _unansweredOnly = true;
+    private Dictionary<Guid, string> _answerDrafts = new();
+    private HashSet<Guid> _busy = new();
+    private Dictionary<Guid, string> _errors = new();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            if (Auth.CurrentUser is null || !(Auth.IsInRole("Teacher") || Auth.IsInRole("Admin")))
+            {
+                Nav.NavigateTo("/login");
+                return;
+            }
+            await Load();
+        }
+    }
+
+    private async Task Load()
+    {
+        _data = await Api.GetTeacherQaInboxAsync(_unansweredOnly);
+        _loaded = true;
+        StateHasChanged();
+    }
+
+    private async Task SetFilter(bool unansweredOnly)
+    {
+        if (_unansweredOnly == unansweredOnly) return;
+        _unansweredOnly = unansweredOnly;
+        _loaded = false; _data = null;
+        StateHasChanged();
+        await Load();
+    }
+
+    private async Task Answer(Guid qid)
+    {
+        _errors.Remove(qid);
+        var body = _answerDrafts.TryGetValue(qid, out var v) ? (v ?? "").Trim() : "";
+        if (body.Length < 2) { _errors[qid] = "اكتب ردًا (حرفان على الأقل)"; StateHasChanged(); return; }
+
+        _busy.Add(qid); StateHasChanged();
+        try
+        {
+            var err = await Api.AnswerLessonQuestionAsync(qid, body);
+            if (err is not null) { _errors[qid] = err.Message ?? "تعذّر إرسال الرد"; return; }
+            _answerDrafts.Remove(qid);
+            await Load();
+        }
+        finally
+        {
+            _busy.Remove(qid);
+            StateHasChanged();
+        }
+    }
+
+    private static string FormatTime(DateTime utc)
+    {
+        var local = utc.ToLocalTime();
+        var diff = DateTime.Now - local;
+        if (diff.TotalMinutes < 1) return "الآن";
+        if (diff.TotalMinutes < 60) return $"منذ {(int)diff.TotalMinutes} د";
+        if (diff.TotalHours < 24) return $"منذ {(int)diff.TotalHours} س";
+        if (diff.TotalDays < 7) return $"منذ {(int)diff.TotalDays} يوم";
+        return local.ToString("yyyy/MM/dd");
+    }
+}

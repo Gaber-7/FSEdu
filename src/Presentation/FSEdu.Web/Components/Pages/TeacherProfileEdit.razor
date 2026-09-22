@@ -1,0 +1,316 @@
+@page "/teacher/profile/edit"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject NavigationManager Nav
+@inject IConfiguration Config
+
+<PageTitle>تعديل ملفّي</PageTitle>
+
+<div class="tpe-page">
+    <div class="fs-container">
+        <header class="tpe-head">
+            <h1>✏️ تعديل ملفّي الشخصي</h1>
+            <a href="@($"/teachers/{Auth.CurrentUser?.Id}")" class="fs-btn fs-btn-outline fs-btn-sm">
+                عرض الملف ←
+            </a>
+        </header>
+
+        @if (!_loaded)
+        {
+            <div class="fs-center" style="padding:80px"><span class="fs-spinner"></span></div>
+        }
+        else if (_data is null)
+        {
+            <div class="fs-alert fs-alert-error">تعذّر التحميل</div>
+        }
+        else
+        {
+            <section class="fs-card tpe-section">
+                <h3>🖼️ الصورة الشخصية</h3>
+                <div class="tpe-avatar-row">
+                    <div class="tpe-avatar-preview">
+                        @if (!string.IsNullOrEmpty(_avatarUrl))
+                        {
+                            <img src="@AvatarFullUrl(_avatarUrl)" alt="" />
+                        }
+                        else
+                        {
+                            <span>@(_data.FullName.FirstOrDefault())</span>
+                        }
+                    </div>
+                    <div class="tpe-avatar-actions">
+                        <InputFile OnChange="OnAvatarSelected" accept="image/*" disabled="@_avatarBusy" />
+                        @if (_avatarBusy) { <small class="fs-text-muted">جارٍ الرفع...</small> }
+                        @if (!string.IsNullOrEmpty(_avatarUrl))
+                        {
+                            <button class="fs-btn fs-btn-outline fs-btn-sm" @onclick="RemoveAvatar" disabled="@_avatarBusy">إزالة الصورة</button>
+                        }
+                        @if (!string.IsNullOrEmpty(_avatarError))
+                        {
+                            <div class="fs-alert fs-alert-error">@_avatarError</div>
+                        }
+                        <small class="fs-text-subtle">JPG/PNG/WEBP/GIF — حد أقصى 3 ميجابايت</small>
+                    </div>
+                </div>
+            </section>
+
+            <section class="fs-card tpe-section">
+                <h3>👤 النبذة وسنوات الخبرة</h3>
+                <p class="fs-text-muted">هذه المعلومات تظهر للطلاب على ملفّك الشخصي.</p>
+
+                <label class="tpe-label">سنوات الخبرة</label>
+                <input type="number" min="0" max="60" class="tpe-input" @bind="_years" />
+
+                <label class="tpe-label">نبذة (اختياري)</label>
+                <textarea rows="6" maxlength="2000" class="tpe-input"
+                          placeholder="عرّف الطلاب بنفسك، خبراتك، أسلوبك في التدريس..."
+                          @bind="_bio"></textarea>
+                <small class="fs-text-muted">@(_bio?.Length ?? 0) / 2000 حرف</small>
+
+                @if (!string.IsNullOrEmpty(_bioError))
+                {
+                    <div class="fs-alert fs-alert-error">@_bioError</div>
+                }
+                @if (!string.IsNullOrEmpty(_bioSuccess))
+                {
+                    <div class="fs-alert fs-alert-success">@_bioSuccess</div>
+                }
+
+                <div class="tpe-actions">
+                    <button class="fs-btn fs-btn-primary" @onclick="SaveProfile" disabled="@_savingProfile">
+                        @(_savingProfile ? "جارٍ الحفظ..." : "حفظ التعديلات")
+                    </button>
+                </div>
+            </section>
+
+            <section class="fs-card tpe-section">
+                <h3>🎓 المؤهلات</h3>
+
+                @if (_data.Qualifications.Length == 0)
+                {
+                    <p class="fs-text-muted">لم تُضف أي مؤهلات بعد.</p>
+                }
+                else
+                {
+                    <ul class="quals">
+                        @foreach (var q in _data.Qualifications)
+                        {
+                            <li class="qual-item">
+                                <div>
+                                    <strong>@q.Title</strong>
+                                    <small>@q.Institution · @q.Year</small>
+                                </div>
+                                <button class="qual-del" title="حذف" @onclick="() => DeleteQual(q.Id)" disabled="@_busyQuals.Contains(q.Id)">
+                                    🗑
+                                </button>
+                            </li>
+                        }
+                    </ul>
+                }
+
+                <div class="qual-form">
+                    <h4>إضافة مؤهل جديد</h4>
+                    <input type="text" class="tpe-input" placeholder="عنوان المؤهل (مثلاً: بكالوريوس رياضيات)"
+                           maxlength="255" @bind="_newTitle" />
+                    <input type="text" class="tpe-input" placeholder="الجامعة / المؤسسة"
+                           maxlength="255" @bind="_newInstitution" />
+                    <input type="number" min="1950" max="@(DateTime.UtcNow.Year + 1)" class="tpe-input"
+                           placeholder="السنة"
+                           @bind="_newYear" />
+
+                    @if (!string.IsNullOrEmpty(_qualError))
+                    {
+                        <div class="fs-alert fs-alert-error">@_qualError</div>
+                    }
+                    <button class="fs-btn fs-btn-primary fs-btn-sm" @onclick="AddQual" disabled="@_addingQual">
+                        @(_addingQual ? "جارٍ الإضافة..." : "➕ أضف")
+                    </button>
+                </div>
+            </section>
+        }
+    </div>
+</div>
+
+<style>
+    .tpe-page { padding: var(--fs-s-8) 0; min-height: calc(100vh - 72px); }
+    .tpe-head { display: flex; justify-content: space-between; align-items: center; gap: var(--fs-s-2); margin-bottom: var(--fs-s-5); flex-wrap: wrap; }
+    .tpe-head h1 { margin: 0; font-size: 24px; }
+
+    .tpe-section { padding: var(--fs-s-5); margin-bottom: var(--fs-s-4); }
+    .tpe-avatar-row { display: flex; gap: var(--fs-s-4); align-items: center; flex-wrap: wrap; }
+    .tpe-avatar-preview {
+        width: 100px; height: 100px; border-radius: 50%;
+        background: linear-gradient(135deg, var(--fs-primary), var(--fs-secondary));
+        color: white; font-weight: 800; font-size: 40px;
+        display: flex; align-items: center; justify-content: center;
+        overflow: hidden; flex-shrink: 0;
+    }
+    .tpe-avatar-preview img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .tpe-avatar-actions { display: flex; flex-direction: column; gap: var(--fs-s-2); flex: 1; min-width: 200px; }
+    .tpe-section h3 { margin: 0 0 var(--fs-s-1); font-size: 18px; }
+
+    .tpe-label { display: block; font-size: 13px; font-weight: 600; margin: var(--fs-s-3) 0 var(--fs-s-1); }
+    .tpe-input {
+        width: 100%; padding: var(--fs-s-2) var(--fs-s-3);
+        border: 1px solid var(--fs-border); border-radius: var(--fs-r-md);
+        font-family: inherit; font-size: 14px; line-height: 1.7;
+    }
+    .tpe-input:focus { outline: none; border-color: var(--fs-primary); }
+    textarea.tpe-input { resize: vertical; }
+
+    .tpe-actions { margin-top: var(--fs-s-4); display: flex; gap: var(--fs-s-2); }
+
+    .quals { list-style: none; padding: 0; margin: 0 0 var(--fs-s-4); display: flex; flex-direction: column; gap: var(--fs-s-2); }
+    .qual-item { display: flex; justify-content: space-between; align-items: center; gap: var(--fs-s-2); padding: var(--fs-s-3); background: var(--fs-bg); border-radius: var(--fs-r-md); }
+    .qual-item strong { display: block; font-size: 14px; }
+    .qual-item small { font-size: 12px; color: var(--fs-text-muted); }
+    .qual-del { background: transparent; border: none; cursor: pointer; font-size: 16px; opacity: 0.5; transition: opacity var(--fs-trans); }
+    .qual-del:hover { opacity: 1; color: var(--fs-error); }
+
+    .qual-form { padding: var(--fs-s-4); background: var(--fs-bg); border-radius: var(--fs-r-md); display: flex; flex-direction: column; gap: var(--fs-s-2); }
+    .qual-form h4 { margin: 0 0 var(--fs-s-1); font-size: 15px; }
+</style>
+
+@code {
+    private FSEdu.Shared.Contracts.Teachers.TeacherProfileDto? _data;
+    private bool _loaded;
+
+    private string? _bio;
+    private int _years;
+    private bool _savingProfile;
+    private string? _bioError;
+    private string? _bioSuccess;
+
+    private string _newTitle = "";
+    private string _newInstitution = "";
+    private int _newYear = DateTime.UtcNow.Year;
+    private bool _addingQual;
+    private string? _qualError;
+
+    private HashSet<long> _busyQuals = new();
+
+    private string? _avatarUrl;
+    private bool _avatarBusy;
+    private string? _avatarError;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            if (Auth.CurrentUser is null || !Auth.IsInRole("Teacher"))
+            {
+                Nav.NavigateTo("/login");
+                return;
+            }
+            await Load();
+        }
+    }
+
+    private async Task Load()
+    {
+        var uid = Auth.CurrentUser!.Id;
+        _data = await Api.GetTeacherProfileAsync(uid);
+        if (_data is not null)
+        {
+            _bio = _data.Bio;
+            _years = _data.YearsOfExperience;
+            _avatarUrl = _data.AvatarUrl;
+        }
+        _loaded = true;
+        StateHasChanged();
+    }
+
+    private async Task OnAvatarSelected(InputFileChangeEventArgs e)
+    {
+        _avatarError = null;
+        var file = e.File;
+        if (file is null) return;
+        if (file.Size > 3 * 1024 * 1024) { _avatarError = "الحد الأقصى 3 ميجابايت"; return; }
+
+        _avatarBusy = true; StateHasChanged();
+        try
+        {
+            await using var stream = file.OpenReadStream(maxAllowedSize: 3 * 1024 * 1024);
+            var (url, err) = await Api.UploadAvatarAsync(stream, file.Name, file.ContentType);
+            if (err is not null) { _avatarError = err.Message ?? "تعذّر رفع الصورة"; return; }
+            if (string.IsNullOrEmpty(url)) { _avatarError = "تعذّر رفع الصورة"; return; }
+            var ok = await Api.SetMyAvatarAsync(url);
+            if (!ok) { _avatarError = "تعذّر حفظ الصورة"; return; }
+            _avatarUrl = url;
+            await Auth.UpdateAvatarLocallyAsync(url);
+        }
+        catch (Exception ex) { _avatarError = "خطأ: " + ex.Message; }
+        finally { _avatarBusy = false; StateHasChanged(); }
+    }
+
+    private async Task RemoveAvatar()
+    {
+        _avatarBusy = true; _avatarError = null; StateHasChanged();
+        try
+        {
+            var ok = await Api.RemoveMyAvatarAsync();
+            if (!ok) { _avatarError = "تعذّر الإزالة"; return; }
+            _avatarUrl = null;
+            await Auth.UpdateAvatarLocallyAsync(null);
+        }
+        finally { _avatarBusy = false; StateHasChanged(); }
+    }
+
+    private string AvatarFullUrl(string? path)
+    {
+        if (string.IsNullOrEmpty(path)) return "";
+        if (path.StartsWith("http", StringComparison.OrdinalIgnoreCase)) return path;
+        var apiBase = (Config["ApiBaseUrl"] ?? "").TrimEnd('/');
+        return apiBase + path;
+    }
+
+    private async Task SaveProfile()
+    {
+        _bioError = null; _bioSuccess = null;
+        if ((_bio?.Length ?? 0) > 2000) { _bioError = "النبذة طويلة جدًا (الحد الأقصى 2000 حرف)"; return; }
+        if (_years < 0 || _years > 60) { _bioError = "سنوات الخبرة بين 0 و 60"; return; }
+
+        _savingProfile = true; StateHasChanged();
+        try
+        {
+            var ok = await Api.UpdateTeacherProfileAsync(_bio, _years);
+            if (ok) { _bioSuccess = "تم الحفظ ✓"; await Load(); }
+            else _bioError = "تعذّر الحفظ. حاول مرة أخرى.";
+        }
+        finally { _savingProfile = false; StateHasChanged(); }
+    }
+
+    private async Task AddQual()
+    {
+        _qualError = null;
+        if (string.IsNullOrWhiteSpace(_newTitle) || _newTitle.Trim().Length < 2)
+        { _qualError = "العنوان قصير جدًا"; return; }
+        if (string.IsNullOrWhiteSpace(_newInstitution) || _newInstitution.Trim().Length < 2)
+        { _qualError = "اسم الجامعة قصير جدًا"; return; }
+        if (_newYear < 1950 || _newYear > DateTime.UtcNow.Year + 1)
+        { _qualError = "السنة غير صحيحة"; return; }
+
+        _addingQual = true; StateHasChanged();
+        try
+        {
+            var id = await Api.AddTeacherQualificationAsync(_newTitle.Trim(), _newInstitution.Trim(), _newYear);
+            if (id is null) { _qualError = "تعذّر الإضافة"; return; }
+            _newTitle = ""; _newInstitution = ""; _newYear = DateTime.UtcNow.Year;
+            await Load();
+        }
+        finally { _addingQual = false; StateHasChanged(); }
+    }
+
+    private async Task DeleteQual(long id)
+    {
+        _busyQuals.Add(id); StateHasChanged();
+        try
+        {
+            var ok = await Api.DeleteTeacherQualificationAsync(id);
+            if (ok) await Load();
+        }
+        finally { _busyQuals.Remove(id); StateHasChanged(); }
+    }
+}

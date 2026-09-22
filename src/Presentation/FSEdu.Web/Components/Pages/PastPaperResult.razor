@@ -1,0 +1,206 @@
+@page "/past-papers/attempts/{AttemptId:guid}"
+@using FSEdu.Shared.Contracts.Assessments
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject NavigationManager Nav
+@rendermode InteractiveServer
+
+<PageTitle>@(_result?.Title ?? "النتيجة") - FSEdu</PageTitle>
+
+<div class="result-page fs-container">
+    @if (!_loaded)
+    {
+        <div class="fs-loading"><span class="fs-spinner"></span></div>
+    }
+    else if (_result is null)
+    {
+        <div class="fs-alert fs-alert-danger">تعذّر تحميل النتيجة</div>
+    }
+    else
+    {
+        <div class="score-card @ScoreCardClass()">
+            <div class="score-emoji">@ScoreEmoji()</div>
+            <h1>@_result.Title</h1>
+            <div class="score-stats">
+                <div class="big-score">
+                    <strong>@_result.Score</strong>
+                    <span>من @_result.MaxScore</span>
+                </div>
+                <div class="big-pct">@_result.PercentageScore%</div>
+            </div>
+            <div class="meta-row">
+                <small>⏱ @FormatDuration(_result.SubmittedAtUtc - _result.StartedAtUtc)</small>
+                <small>📅 @_result.SubmittedAtUtc.ToLocalTime().ToString("yyyy/MM/dd HH:mm")</small>
+            </div>
+            <div class="actions">
+                <a href="/past-papers" class="fs-btn fs-btn-ghost">← العودة للقائمة</a>
+                <a href="@($"/past-papers/{_result.PastPaperId}/start")" class="fs-btn fs-btn-primary">إعادة المحاولة 🔁</a>
+            </div>
+        </div>
+
+        <h2 class="review-h">مراجعة الإجابات</h2>
+        <div class="review-list">
+            @foreach (var q in _result.Questions)
+            {
+                <div class="rev-card @(q.IsCorrect ? "correct" : "wrong")">
+                    <div class="rev-head">
+                        <span class="rev-num">@q.OrderNum</span>
+                        <div class="rev-body">
+                            <div class="rev-text">@q.Body</div>
+                            <span class="rev-badge">@(q.IsCorrect ? "✓ صحيح" : "✗ خطأ") · @q.AwardedMarks / @q.Marks</span>
+                        </div>
+                    </div>
+
+                    @if (q.Options is not null)
+                    {
+                        <div class="rev-options">
+                            @foreach (var opt in q.Options)
+                            {
+                                var isYour = StripQuotes(q.GivenAnswerJson ?? "") == opt;
+                                var isRight = StripQuotes(q.CorrectAnswerJson) == opt;
+                                <div class="rev-option @(isYour ? "your" : "") @(isRight ? "right" : "")">
+                                    <span>@opt</span>
+                                    @if (isRight) { <small>✓ الإجابة الصحيحة</small> }
+                                    else if (isYour) { <small>✗ إجابتك</small> }
+                                </div>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="rev-ans-row">
+                            <div><strong>إجابتك:</strong> @(string.IsNullOrEmpty(q.GivenAnswerJson) ? "—" : StripQuotes(q.GivenAnswerJson))</div>
+                            <div class="right"><strong>الإجابة الصحيحة:</strong> @StripQuotes(q.CorrectAnswerJson)</div>
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrEmpty(q.Explanation))
+                    {
+                        <div class="rev-explain">
+                            <strong>💡 شرح الإجابة</strong>
+                            <p>@q.Explanation</p>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<style>
+    .result-page { min-height: calc(100vh - 72px); padding: var(--fs-s-8) 0; }
+
+    .score-card {
+        background: white; border: 1px solid var(--fs-border);
+        border-radius: var(--fs-r-xl); padding: var(--fs-s-8) var(--fs-s-5);
+        text-align: center; margin-bottom: var(--fs-s-6);
+    }
+    .score-card.excellent { border-top: 6px solid #16A34A; background: linear-gradient(180deg, #F0FDF4, white); }
+    .score-card.good { border-top: 6px solid #2563EB; background: linear-gradient(180deg, #EFF6FF, white); }
+    .score-card.average { border-top: 6px solid #F59E0B; background: linear-gradient(180deg, #FFFBEB, white); }
+    .score-card.poor { border-top: 6px solid #DC2626; background: linear-gradient(180deg, #FEF2F2, white); }
+    .score-emoji { font-size: 72px; }
+    .score-card h1 { margin: var(--fs-s-3) 0; }
+    .score-stats { display: flex; justify-content: center; align-items: center; gap: var(--fs-s-8); margin: var(--fs-s-5) 0; }
+    .big-score strong { font-size: 56px; font-weight: 800; display: block; line-height: 1; }
+    .big-score span { font-size: 14px; color: var(--fs-text-muted); }
+    .big-pct { font-size: 42px; font-weight: 800; color: var(--fs-primary); }
+    .meta-row { display: flex; justify-content: center; gap: var(--fs-s-4); color: var(--fs-text-muted); }
+    .actions { display: flex; justify-content: center; gap: var(--fs-s-3); margin-top: var(--fs-s-5); flex-wrap: wrap; }
+
+    .review-h { margin-bottom: var(--fs-s-4); }
+
+    .review-list { display: flex; flex-direction: column; gap: var(--fs-s-4); }
+    .rev-card {
+        background: white; border: 1px solid var(--fs-border);
+        border-radius: var(--fs-r-lg); padding: var(--fs-s-5);
+    }
+    .rev-card.correct { border-right: 4px solid #16A34A; }
+    .rev-card.wrong { border-right: 4px solid #DC2626; }
+
+    .rev-head { display: flex; gap: var(--fs-s-3); margin-bottom: var(--fs-s-3); }
+    .rev-num {
+        flex-shrink: 0; width: 32px; height: 32px;
+        background: var(--fs-bg); border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        font-weight: 800; color: var(--fs-text-muted);
+    }
+    .rev-body { flex: 1; }
+    .rev-text { font-size: 15px; margin-bottom: 6px; line-height: 1.6; }
+    .rev-badge { font-size: 12px; font-weight: 700; }
+    .rev-card.correct .rev-badge { color: #16A34A; }
+    .rev-card.wrong .rev-badge { color: #DC2626; }
+
+    .rev-options { display: flex; flex-direction: column; gap: 6px; }
+    .rev-option {
+        padding: 10px 14px; border-radius: var(--fs-r-md);
+        background: var(--fs-bg);
+        display: flex; justify-content: space-between; align-items: center;
+        font-size: 14px;
+    }
+    .rev-option.right { background: #DCFCE7; color: #15803D; font-weight: 700; }
+    .rev-option.your:not(.right) { background: #FEE2E2; color: #B91C1C; }
+    .rev-option small { font-size: 11px; font-weight: 700; }
+
+    .rev-ans-row { display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+    .rev-ans-row .right { color: #15803D; }
+
+    .rev-explain {
+        margin-top: var(--fs-s-3);
+        background: var(--fs-primary-soft); color: var(--fs-text);
+        padding: var(--fs-s-3); border-radius: var(--fs-r-md);
+    }
+    .rev-explain strong { display: block; color: var(--fs-primary); margin-bottom: 4px; }
+    .rev-explain p { margin: 0; font-size: 14px; line-height: 1.6; }
+</style>
+
+@code {
+    [Parameter] public Guid AttemptId { get; set; }
+
+    private PastPaperAttemptResultDto? _result;
+    private bool _loaded;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        await Auth.RestoreAsync();
+        if (!Auth.IsAuthenticated) { Nav.NavigateTo("/login"); return; }
+        _result = await Api.GetPastPaperAttemptAsync(AttemptId);
+        _loaded = true;
+        StateHasChanged();
+    }
+
+    private string ScoreCardClass()
+    {
+        if (_result is null) return "";
+        return _result.PercentageScore switch
+        {
+            >= 85 => "excellent",
+            >= 65 => "good",
+            >= 50 => "average",
+            _     => "poor",
+        };
+    }
+
+    private string ScoreEmoji() => _result?.PercentageScore switch
+    {
+        >= 85 => "🏆",
+        >= 65 => "🎯",
+        >= 50 => "📈",
+        _     => "💪",
+    };
+
+    private static string FormatDuration(TimeSpan span)
+    {
+        if (span.TotalMinutes < 60) return $"{(int)span.TotalMinutes} د {span.Seconds} ث";
+        return $"{(int)span.TotalHours} س {span.Minutes} د";
+    }
+
+    private static string StripQuotes(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return "";
+        var t = s.Trim();
+        if (t.Length >= 2 && t[0] == '"' && t[^1] == '"') return t.Substring(1, t.Length - 2);
+        return t;
+    }
+}

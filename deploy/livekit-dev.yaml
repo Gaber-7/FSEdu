@@ -1,0 +1,30 @@
+# Local-development LiveKit config — DO NOT use in production.
+# Loopback only, no TLS, fixed dev keys.
+
+port: 7880
+bind_addresses:
+  - "0.0.0.0"   # accept loopback from host
+
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 50100
+  use_external_ip: false
+  # Hint clients to fall back to TCP when UDP fails (common on Docker Desktop)
+  ice_lite: false
+
+# Dev keys — match the API's appsettings.Development.json
+keys:
+  devkey: devsecret_must_be_at_least_32_characters_xxxxxxxxxx
+
+logging:
+  level: info
+  json: false
+
+room:
+  enabled_codecs:
+    - mime: audio/opus
+    - mime: video/h264
+    - mime: video/vp8
+  empty_timeout: 300
+  max_participants: 50

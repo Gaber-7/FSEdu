@@ -1,0 +1,132 @@
+@page "/teacher/courses/{CourseId:guid}/assessments/new"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject NavigationManager Nav
+
+<PageTitle>اختبار جديد — المدرس</PageTitle>
+
+<div class="auth-wrapper">
+    <div class="fs-container">
+        <div class="auth-card fs-card fs-card-elevated">
+            <div class="auth-head">
+                <h1>📝 إنشاء اختبار جديد</h1>
+                <p class="fs-text-muted">أدخل بيانات الاختبار، ثم أضف الأسئلة في الخطوة التالية</p>
+            </div>
+
+            @if (!string.IsNullOrEmpty(_error))
+            {
+                <div class="fs-alert fs-alert-error"><span>⚠️</span><span>@_error</span></div>
+            }
+
+            <div class="fs-form-group">
+                <label class="fs-label">نوع الاختبار</label>
+                <div class="type-chips">
+                    <button class="type-chip @(_type == "Quiz" ? "active" : "")" @onclick='() => _type = "Quiz"'>
+                        📝 اختبار قصير
+                    </button>
+                    <button class="type-chip @(_type == "Assignment" ? "active" : "")" @onclick='() => _type = "Assignment"'>
+                        📘 واجب منزلي
+                    </button>
+                    <button class="type-chip @(_type == "Exam" ? "active" : "")" @onclick='() => _type = "Exam"'>
+                        🎓 امتحان
+                    </button>
+                </div>
+            </div>
+
+            <div class="fs-form-group">
+                <label class="fs-label">عنوان الاختبار</label>
+                <input class="fs-input" @bind="_title" placeholder="مثال: اختبار الوحدة الأولى" />
+            </div>
+
+            <div class="fs-form-group">
+                <label class="fs-label">الوصف (اختياري)</label>
+                <textarea class="fs-input" rows="3" @bind="_description"
+                          placeholder="ما الذي يغطّيه هذا الاختبار..."></textarea>
+            </div>
+
+            <div class="fs-form-row">
+                <div class="fs-form-group">
+                    <label class="fs-label">مدة الاختبار (بالدقائق)</label>
+                    <input type="number" class="fs-input" @bind="_timeLimit" min="0" />
+                    <small class="fs-text-subtle">اترك 0 لعدم التحديد</small>
+                </div>
+                <div class="fs-form-group">
+                    <label class="fs-label">درجة النجاح</label>
+                    <input type="number" class="fs-input" @bind="_passingMarks" min="0" step="0.5" />
+                </div>
+                <div class="fs-form-group">
+                    <label class="fs-label">عدد المحاولات المسموح بها</label>
+                    <input type="number" class="fs-input" @bind="_attemptsAllowed" min="1" />
+                </div>
+            </div>
+
+            <button class="fs-btn fs-btn-primary fs-btn-lg fs-btn-block" @onclick="Submit" disabled="@_loading">
+                @if (_loading) { <span class="fs-spinner"></span><span>جارٍ الإنشاء...</span> }
+                else { <span>إنشاء ومتابعة إضافة الأسئلة ←</span> }
+            </button>
+
+            <div class="auth-alt">
+                <a href="/teacher/courses/@CourseId/edit">→ العودة للدورة</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .auth-wrapper { padding: 60px 0; min-height: calc(100vh - 72px); background: radial-gradient(at 10% 0%, var(--fs-primary-soft) 0%, transparent 50%); }
+    .auth-card { max-width: 640px; margin: 0 auto; }
+    .auth-head { text-align: center; margin-bottom: var(--fs-s-6); }
+    .auth-head h1 { font-size: 26px; margin: var(--fs-s-2) 0; }
+
+    .type-chips { display: flex; gap: var(--fs-s-2); flex-wrap: wrap; }
+    .type-chip {
+        flex: 1; padding: var(--fs-s-4);
+        background: var(--fs-surface); border: 2px solid var(--fs-border);
+        border-radius: var(--fs-r-md);
+        font-family: var(--fs-font-body); font-weight: 600; font-size: 14px;
+        cursor: pointer; transition: all var(--fs-trans); text-align: center;
+    }
+    .type-chip:hover { border-color: var(--fs-primary); }
+    .type-chip.active { border-color: var(--fs-primary); background: var(--fs-primary-soft); color: var(--fs-primary); }
+
+    .fs-form-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--fs-s-3); }
+    @@media (max-width: 700px) { .fs-form-row { grid-template-columns: 1fr; } }
+    .auth-alt { text-align: center; margin-top: var(--fs-s-4); font-size: 14px; }
+</style>
+
+@code {
+    [Parameter] public Guid CourseId { get; set; }
+
+    private string _type = "Quiz";
+    private string _title = "";
+    private string _description = "";
+    private int _timeLimit = 30;
+    private decimal _passingMarks = 50;
+    private int _attemptsAllowed = 1;
+    private string? _error;
+    private bool _loading;
+
+    private async Task Submit()
+    {
+        _error = null;
+        if (string.IsNullOrWhiteSpace(_title) || _title.Length < 3)
+        { _error = "العنوان يجب أن يكون 3 أحرف على الأقل"; return; }
+
+        _loading = true;
+        try
+        {
+            var req = new FSEdu.Shared.Contracts.Assessments.CreateAssessmentRequest(
+                CourseId, _type, _title.Trim(),
+                string.IsNullOrWhiteSpace(_description) ? null : _description.Trim(),
+                _timeLimit > 0 ? _timeLimit : null,
+                _passingMarks, _attemptsAllowed, null, null);
+
+            var (id, err) = await Api.CreateAssessmentAsync(req);
+            if (err is not null) { _error = err.Message; return; }
+            Nav.NavigateTo($"/teacher/assessments/{id}/edit");
+        }
+        catch (Exception ex) { _error = "خطأ: " + ex.Message; }
+        finally { _loading = false; }
+    }
+}

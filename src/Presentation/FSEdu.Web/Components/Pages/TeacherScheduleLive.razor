@@ -1,0 +1,244 @@
+@page "/teacher/live/new"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject NavigationManager Nav
+
+<PageTitle>@(_editId is null ? "جدولة حصة مباشرة" : "تعديل الحصة")</PageTitle>
+
+<div class="auth-wrapper">
+    <div class="fs-container">
+        <div class="auth-card fs-card fs-card-elevated">
+            <div class="auth-head">
+                <h1>@(_editId is null ? "📅 جدولة حصة مباشرة" : "✏️ تعديل الحصة")</h1>
+                <p class="fs-text-muted">
+                    @(_editId is null
+                        ? "حدد وقت الحصة وستظهر للطلاب المشتركين في المادة"
+                        : "يمكنك تعديل الحصة طالما لم تبدأ بعد")
+                </p>
+            </div>
+
+            @if (!string.IsNullOrEmpty(_error))
+            {
+                <div class="fs-alert fs-alert-error"><span>⚠️</span><span>@_error</span></div>
+            }
+
+            <div class="fs-form-group">
+                <label class="fs-label">عنوان الحصة</label>
+                <input class="fs-input" @bind="_title" placeholder="مثال: مراجعة عامة على الوحدة الأولى" />
+            </div>
+
+            <div class="fs-form-row">
+                <div class="fs-form-group">
+                    <label class="fs-label">المرحلة</label>
+                    <select class="fs-select" @bind="_stageId" @bind:after="OnStageChanged">
+                        <option value="0">-- اختر --</option>
+                        @if (_stages is not null)
+                        {
+                            @foreach (var s in _stages)
+                            { <option value="@s.Id">@s.NameAr</option> }
+                        }
+                    </select>
+                </div>
+                <div class="fs-form-group">
+                    <label class="fs-label">المادة</label>
+                    <select class="fs-select" @bind="_subjectId">
+                        <option value="0">-- اختر --</option>
+                        @if (_subjects is not null)
+                        {
+                            @foreach (var s in _subjects)
+                            { <option value="@s.Id">@s.NameAr</option> }
+                        }
+                    </select>
+                </div>
+            </div>
+
+            <div class="fs-form-row">
+                <div class="fs-form-group">
+                    <label class="fs-label">تاريخ ووقت البدء</label>
+                    <input type="datetime-local" class="fs-input fs-input-phone" @bind="_scheduledAtLocal" />
+                </div>
+                <div class="fs-form-group">
+                    <label class="fs-label">المدة (دقيقة)</label>
+                    <input type="number" class="fs-input" @bind="_duration" min="15" max="240" step="15" />
+                </div>
+            </div>
+
+            <div class="fs-form-group">
+                <label class="fs-label">الوصف (اختياري)</label>
+                <textarea class="fs-input" rows="3" @bind="_description"
+                          placeholder="ما الذي ستغطيه الحصة..."></textarea>
+            </div>
+
+            @if (_editId is null)
+            {
+                <div class="bulk-toggle">
+                    <label>
+                        <input type="checkbox" @bind="_bulkMode" />
+                        <strong>📆 جدولة متكرّرة أسبوعيًا</strong>
+                    </label>
+                    @if (_bulkMode)
+                    {
+                        <div class="bulk-options">
+                            <small class="fs-text-muted">سيتم إنشاء عدّة حصص متتالية أسبوعيًا. استخدم <code>{N}</code> في العنوان ليُستبدل برقم الأسبوع تلقائيًا.</small>
+                            <div class="fs-form-group">
+                                <label class="fs-label">عدد الحصص (2-30)</label>
+                                <input type="number" class="fs-input" min="2" max="30" @bind="_occurrences" />
+                            </div>
+                            <div class="bulk-hint">
+                                مثال على العنوان: <code>@FormatPreviewTitle()</code> → ينشئ "<em>@PreviewFirst()</em>" ... "<em>@PreviewLast()</em>"
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+
+            <button class="fs-btn fs-btn-primary fs-btn-lg fs-btn-block" @onclick="Submit" disabled="@_submitting">
+                @if (_submitting) { <span class="fs-spinner"></span><span>جارٍ الحفظ...</span> }
+                else if (_bulkMode) { <span>📆 جدولة @_occurrences حصة متتالية</span> }
+                else { <span>@(_editId is null ? "📅 تأكيد الجدولة" : "💾 حفظ التعديلات")</span> }
+            </button>
+
+            <div class="auth-alt"><a href="/teacher/live">→ حصصي المباشرة</a></div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .auth-wrapper { padding: 60px 0; min-height: calc(100vh - 72px); background: radial-gradient(at 10% 0%, var(--fs-primary-soft) 0%, transparent 50%); }
+    .auth-card { max-width: 640px; margin: 0 auto; }
+    .auth-head { text-align: center; margin-bottom: var(--fs-s-6); }
+    .auth-head h1 { font-size: 26px; margin: var(--fs-s-2) 0; }
+    .fs-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--fs-s-3); }
+    @@media (max-width: 600px) { .fs-form-row { grid-template-columns: 1fr; } }
+    .auth-alt { text-align: center; margin-top: var(--fs-s-4); font-size: 14px; }
+
+    .bulk-toggle { padding: var(--fs-s-3); background: var(--fs-bg); border-radius: var(--fs-r-md); margin-bottom: var(--fs-s-3); }
+    .bulk-toggle label { display: flex; align-items: center; gap: var(--fs-s-2); cursor: pointer; }
+    .bulk-toggle input[type="checkbox"] { width: 18px; height: 18px; }
+    .bulk-options { margin-top: var(--fs-s-3); padding-top: var(--fs-s-3); border-top: 1px dashed var(--fs-border); }
+    .bulk-options code { background: var(--fs-primary-soft); color: var(--fs-primary); padding: 1px 6px; border-radius: 4px; font-family: monospace; }
+    .bulk-hint { font-size: 12px; color: var(--fs-text-muted); margin-top: var(--fs-s-2); padding: var(--fs-s-2); background: var(--fs-surface); border-radius: var(--fs-r-sm); }
+    .bulk-hint em { color: var(--fs-text); font-style: normal; font-weight: 600; }
+</style>
+
+@code {
+    [SupplyParameterFromQuery(Name = "id")] public Guid? _editId { get; set; }
+
+    private List<FSEdu.Shared.Contracts.Reference.StageDto>? _stages;
+    private List<FSEdu.Shared.Contracts.Reference.SubjectDto>? _subjects;
+    private int _stageId;
+    private int _subjectId;
+    private string _title = "";
+    private string _description = "";
+    private int _duration = 60;
+    private DateTime _scheduledAtLocal = DateTime.Now.AddHours(1);
+    private string? _error;
+    private bool _submitting;
+
+    // Bulk-recurring mode
+    private bool _bulkMode;
+    private int _occurrences = 4;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var stages = await Api.GetStagesAsync();
+            _stages = stages.Where(s => s.ParentStageId != null).OrderBy(s => s.LevelOrder).ToList();
+        }
+        catch { }
+
+        if (_editId is Guid id)
+        {
+            try
+            {
+                var sessions = await Api.GetMyLiveSessionsAsync();
+                var s = sessions.FirstOrDefault(x => x.Id == id);
+                if (s is null)
+                {
+                    _error = "الحصة غير موجودة";
+                    return;
+                }
+                if (s.Status != "Scheduled")
+                {
+                    _error = "لا يمكن تعديل حصة بدأت أو انتهت";
+                    return;
+                }
+                _title = s.Title;
+                _description = s.Description ?? "";
+                _stageId = s.StageId;
+                _duration = s.DurationMinutes;
+                _scheduledAtLocal = s.ScheduledAtUtc.ToLocalTime();
+                if (_stageId > 0)
+                {
+                    try { _subjects = await Api.GetSubjectsAsync(_stageId); } catch { _subjects = new(); }
+                }
+                _subjectId = s.SubjectId;
+            }
+            catch (Exception ex) { _error = "تعذّر تحميل الحصة: " + ex.Message; }
+        }
+    }
+
+    private async Task OnStageChanged()
+    {
+        if (_stageId == 0) { _subjects = null; _subjectId = 0; return; }
+        try { _subjects = await Api.GetSubjectsAsync(_stageId); } catch { _subjects = new(); }
+    }
+
+    private async Task Submit()
+    {
+        _error = null;
+        if (string.IsNullOrWhiteSpace(_title) || _title.Length < 3)
+        { _error = "العنوان يجب أن يكون 3 أحرف على الأقل"; return; }
+        if (_stageId == 0) { _error = "اختر المرحلة"; return; }
+        if (_subjectId == 0) { _error = "اختر المادة"; return; }
+        if (_scheduledAtLocal <= DateTime.Now.AddMinutes(-5))
+        { _error = "وقت البدء يجب أن يكون في المستقبل"; return; }
+
+        _submitting = true;
+        try
+        {
+            var description = string.IsNullOrWhiteSpace(_description) ? null : _description.Trim();
+            var scheduledUtc = _scheduledAtLocal.ToUniversalTime();
+
+            FSEdu.Shared.Contracts.Auth.ErrorResponse? err;
+            if (_editId is Guid editId)
+            {
+                var req = new FSEdu.Shared.Contracts.LiveClassroom.EditLiveSessionRequest(
+                    _title.Trim(), description, _subjectId, _stageId, scheduledUtc, _duration);
+                err = await Api.EditLiveSessionAsync(editId, req);
+            }
+            else if (_bulkMode)
+            {
+                if (_occurrences < 2 || _occurrences > 30)
+                { _error = "عدد الحصص بين 2 و 30"; return; }
+                var (ids, e) = await Api.BulkScheduleLiveSessionsAsync(
+                    _subjectId, _stageId, _title.Trim(), description,
+                    scheduledUtc, _duration, _occurrences);
+                err = e;
+                if (err is null && ids is not null)
+                {
+                    // Done; go to the list to see the freshly created sessions.
+                }
+            }
+            else
+            {
+                var req = new FSEdu.Shared.Contracts.LiveClassroom.ScheduleLiveSessionRequest(
+                    _subjectId, _stageId, _title.Trim(), description, scheduledUtc, _duration);
+                var (_, e) = await Api.ScheduleLiveSessionAsync(req);
+                err = e;
+            }
+            if (err is not null) { _error = err.Message; return; }
+            Nav.NavigateTo("/teacher/live");
+        }
+        catch (Exception ex) { _error = "خطأ: " + ex.Message; }
+        finally { _submitting = false; }
+    }
+
+    private string FormatPreviewTitle() =>
+        string.IsNullOrEmpty(_title) ? "حصة الرياضيات — الأسبوع {N}" : _title;
+
+    private string PreviewFirst() => FormatPreviewTitle().Replace("{N}", "1").Replace("{n}", "1");
+    private string PreviewLast() => FormatPreviewTitle().Replace("{N}", _occurrences.ToString()).Replace("{n}", _occurrences.ToString());
+}

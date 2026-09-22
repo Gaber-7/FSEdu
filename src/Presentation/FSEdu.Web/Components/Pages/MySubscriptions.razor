@@ -1,0 +1,214 @@
+@page "/student/subscriptions"
+@page "/my/subscriptions"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject NavigationManager Nav
+
+<PageTitle>اشتراكاتي — FSEdu</PageTitle>
+
+<div class="subs-page">
+    <div class="fs-container">
+        <div class="page-head">
+            <div>
+                <h1>💳 اشتراكاتي</h1>
+                <p class="fs-text-muted">جميع اشتراكاتك النشطة والسابقة</p>
+            </div>
+            <a href="/pricing" class="fs-btn fs-btn-primary">+ اشتراك جديد</a>
+        </div>
+
+        @if (!_loaded)
+        {
+            <div class="fs-center" style="padding: 80px;"><span class="fs-spinner"></span></div>
+        }
+        else if (!Auth.IsAuthenticated)
+        {
+            <div class="fs-alert fs-alert-error">
+                يجب تسجيل الدخول. <a href="/login">تسجيل الدخول</a>
+            </div>
+        }
+        else if (_subs is null || !_subs.Any())
+        {
+            <div class="fs-card fs-center empty">
+                <div style="font-size: 64px;">📭</div>
+                <h3>لا يوجد اشتراكات بعد</h3>
+                <p class="fs-text-muted">ابدأ رحلتك التعليمية بأول اشتراك لك</p>
+                <a href="/pricing" class="fs-btn fs-btn-primary">استعرض الباقات</a>
+            </div>
+        }
+        else
+        {
+            var expiringSoonCount = _subs.Count(s => s.IsActive && (s.EndsAtUtc - DateTime.UtcNow).TotalDays <= 7);
+            @if (expiringSoonCount > 0)
+            {
+                <div class="renew-banner">
+                    <div>
+                        <strong>⏳ @expiringSoonCount من اشتراكاتك قارب على الانتهاء</strong>
+                        <small>جدّد الآن لتفادي انقطاع الوصول لمحتواك.</small>
+                    </div>
+                </div>
+            }
+
+            <div class="subs-grid">
+                @foreach (var s in _subs)
+                {
+                    var remaining = (int)(s.EndsAtUtc - DateTime.UtcNow).TotalDays;
+                    var urgency = !s.IsActive ? "expired"
+                                : remaining < 2 ? "critical"
+                                : remaining < 7 ? "warn"
+                                : "ok";
+
+                    <div class="sub-card fs-card @(s.IsActive ? "active" : "inactive") @urgency">
+                        <div class="sub-head">
+                            <span class="sub-icon">@GetIcon(s.Type)</span>
+                            <div class="sub-title">
+                                <strong>@s.TypeLabel</strong>
+                                <small>@(s.SubjectName ?? s.StageName ?? "—")</small>
+                            </div>
+                            @if (s.IsActive)
+                            {
+                                <span class="fs-badge fs-badge-secondary">✓ نشط</span>
+                            }
+                            else
+                            {
+                                <span class="fs-badge">منتهي</span>
+                            }
+                        </div>
+
+                        <div class="sub-details">
+                            @if (!string.IsNullOrEmpty(s.Term))
+                            {
+                                <div class="detail"><span>الترم</span><strong>@TermLabel(s.Term)</strong></div>
+                            }
+                            <div class="detail"><span>من</span><strong>@s.StartsAtUtc.ToString("yyyy/MM/dd")</strong></div>
+                            <div class="detail"><span>إلى</span><strong>@s.EndsAtUtc.ToString("yyyy/MM/dd")</strong></div>
+                            <div class="detail"><span>المبلغ</span><strong>@s.AmountPaid ج.م</strong></div>
+                        </div>
+
+                        @if (s.IsActive)
+                        {
+                            <div class="remaining @urgency">
+                                @if (urgency == "critical")
+                                { <span>🚨 ينتهي خلال <strong>@remaining</strong> يوم — جدّد فورًا</span> }
+                                else if (urgency == "warn")
+                                { <span>⚠️ متبقي <strong>@remaining</strong> يوم</span> }
+                                else
+                                { <span>⏰ متبقي <strong>@remaining</strong> يوم</span> }
+                            </div>
+                        }
+
+                        @if (urgency == "warn" || urgency == "critical" || urgency == "expired")
+                        {
+                            <button class="fs-btn fs-btn-primary fs-btn-block renew-btn"
+                                    @onclick="() => Renew(s)">
+                                🔄 تجديد الاشتراك
+                            </button>
+                        }
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .subs-page { padding: var(--fs-s-10) 0; min-height: calc(100vh - 72px); }
+    .page-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--fs-s-8); flex-wrap: wrap; gap: var(--fs-s-3); }
+    .empty { padding: 80px; text-align: center; }
+    .empty h3 { margin: var(--fs-s-3) 0 var(--fs-s-2); }
+    .empty .fs-btn { margin-top: var(--fs-s-4); }
+
+    .subs-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: var(--fs-s-5); }
+
+    .sub-card { display: flex; flex-direction: column; gap: var(--fs-s-4); border-right: 4px solid var(--fs-border); }
+    .sub-card.active { border-right-color: var(--fs-success); background: linear-gradient(to right, rgba(16,185,129,0.05), transparent); }
+    .sub-card.inactive { opacity: 0.7; }
+
+    .sub-head { display: flex; align-items: center; gap: var(--fs-s-3); }
+    .sub-icon { font-size: 32px; }
+    .sub-title { flex: 1; }
+    .sub-title strong { display: block; font-size: 15px; }
+    .sub-title small { display: block; color: var(--fs-text-muted); font-size: 13px; }
+
+    .sub-details {
+        display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--fs-s-3);
+        padding-top: var(--fs-s-3);
+        border-top: 1px solid var(--fs-border);
+    }
+    .detail { display: flex; flex-direction: column; }
+    .detail span { font-size: 12px; color: var(--fs-text-muted); margin-bottom: 2px; }
+    .detail strong { font-size: 14px; }
+
+    .remaining {
+        padding: var(--fs-s-2) var(--fs-s-3);
+        background: var(--fs-accent-soft); color: #B56E00;
+        border-radius: var(--fs-r-md);
+        font-size: 13px;
+    }
+    .remaining strong { font-size: 16px; }
+    .remaining.ok { background: rgba(16,185,129,0.12); color: #047857; }
+    .remaining.warn { background: rgba(245,158,11,0.18); color: #B56E00; }
+    .remaining.critical { background: rgba(220,38,38,0.15); color: #B91C1C; animation: pulse 1.6s infinite; }
+    @@keyframes pulse { 50% { opacity: 0.6; } }
+
+    .sub-card.warn { border-right-color: #F59E0B !important; background: linear-gradient(to right, rgba(245,158,11,0.06), transparent); }
+    .sub-card.critical { border-right-color: var(--fs-danger) !important; background: linear-gradient(to right, rgba(220,38,38,0.06), transparent); }
+    .sub-card.expired { border-right-color: #94A3B8 !important; }
+
+    .renew-btn { margin-top: var(--fs-s-2); }
+
+    .renew-banner {
+        background: linear-gradient(135deg, #F59E0B, #FBBF24);
+        color: white; padding: var(--fs-s-4) var(--fs-s-5);
+        border-radius: var(--fs-r-md); margin-bottom: var(--fs-s-5);
+        display: flex; justify-content: space-between; align-items: center;
+        gap: var(--fs-s-3); flex-wrap: wrap;
+    }
+    .renew-banner strong { display: block; font-size: 16px; }
+    .renew-banner small { display: block; opacity: 0.9; margin-top: 2px; }
+</style>
+
+@code {
+    private List<FSEdu.Shared.Contracts.Subscriptions.MySubscriptionDto>? _subs;
+    private bool _loaded;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            try
+            {
+                if (Auth.IsAuthenticated) _subs = await Api.GetMySubscriptionsAsync();
+            }
+            catch { _subs = new(); }
+            _loaded = true; StateHasChanged();
+        }
+    }
+
+    private static string GetIcon(string type) => type switch
+    {
+        "SubjectMonthly" => "📖",
+        "SubjectTerm" => "📚",
+        "StageFullTerm" => "🎓",
+        _ => "💳"
+    };
+
+    private static string TermLabel(string term) => term switch
+    {
+        "First" => "الترم الأول",
+        "Second" => "الترم الثاني",
+        "Annual" => "سنوي",
+        _ => term
+    };
+
+    private void Renew(FSEdu.Shared.Contracts.Subscriptions.MySubscriptionDto s)
+    {
+        // Build /subscribe URL with same plan pre-selected.
+        var qs = new List<string> { $"Type={Uri.EscapeDataString(s.Type)}" };
+        if (s.SubjectId is int sid) qs.Add($"SubjectId={sid}");
+        if (s.StageId is int gid) qs.Add($"StageId={gid}");
+        if (!string.IsNullOrEmpty(s.Term)) qs.Add($"Term={Uri.EscapeDataString(s.Term)}");
+        Nav.NavigateTo("/subscribe?" + string.Join('&', qs));
+    }
+}

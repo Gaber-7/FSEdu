@@ -1,0 +1,251 @@
+@page "/student/progress"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject NavigationManager Nav
+
+<PageTitle>تقدّمي في الدراسة</PageTitle>
+
+<div class="page">
+    <div class="fs-container">
+        <div class="page-head">
+            <div>
+                <h1>📈 تقدّمي في الدراسة</h1>
+                <p class="fs-text-muted">نظرة شاملة على مشوارك التعليمي في FSEdu</p>
+            </div>
+            <button class="fs-btn fs-btn-outline" @onclick="Load">🔄 تحديث</button>
+        </div>
+
+        @if (!_loaded)
+        {
+            <div class="fs-center" style="padding:60px"><span class="fs-spinner"></span></div>
+        }
+        else if (!Auth.IsAuthenticated)
+        {
+            <div class="fs-alert fs-alert-error">يجب تسجيل الدخول. <a href="/login">دخول</a></div>
+        }
+        else if (_data is null)
+        {
+            <div class="fs-card fs-center empty">
+                <div style="font-size:64px">📊</div>
+                <h3>تعذّر تحميل بيانات التقدّم</h3>
+                <button class="fs-btn fs-btn-primary" @onclick="Load">إعادة المحاولة</button>
+            </div>
+        }
+        else
+        {
+            <!-- Resume bar -->
+            @if (_data.ResumeLessonId is not null)
+            {
+                <div class="resume-bar fs-card">
+                    <div>
+                        <small class="fs-text-muted">آخر درس شُوهد</small>
+                        <div class="resume-title">@_data.ResumeLessonTitle</div>
+                        <small class="fs-text-muted">@_data.ResumeCourseTitle</small>
+                    </div>
+                    <a href="/courses/@_data.ResumeCourseId" class="fs-btn fs-btn-primary">▶ استئناف</a>
+                </div>
+            }
+
+            <!-- Stat cards -->
+            <div class="stats-grid">
+                <div class="stat fs-card">
+                    <div class="stat-icon" style="background:#5B4FE5">📚</div>
+                    <div>
+                        <div class="stat-value">@_data.TotalLessonsCompleted / @_data.TotalLessonsAvailable</div>
+                        <div class="stat-label">دروس مكتملة</div>
+                    </div>
+                </div>
+                <div class="stat fs-card">
+                    <div class="stat-icon" style="background:#10B981">📊</div>
+                    <div>
+                        <div class="stat-value">@_data.OverallPct%</div>
+                        <div class="stat-label">إجمالي التقدّم</div>
+                    </div>
+                </div>
+                <div class="stat fs-card">
+                    <div class="stat-icon" style="background:#F59E0B">🔥</div>
+                    <div>
+                        <div class="stat-value">@_data.CurrentStreakDays</div>
+                        <div class="stat-label">أيام متتالية (الأطول: @_data.LongestStreakDays)</div>
+                    </div>
+                </div>
+                <div class="stat fs-card">
+                    <div class="stat-icon" style="background:#A855F7">⭐</div>
+                    <div>
+                        <div class="stat-value">@_data.XpPoints</div>
+                        <div class="stat-label">نقاط الخبرة</div>
+                    </div>
+                </div>
+                <div class="stat fs-card">
+                    <div class="stat-icon" style="background:#DC2626">🏆</div>
+                    <div>
+                        <div class="stat-value">@_data.BadgesEarned</div>
+                        <div class="stat-label">شارات مكتسبة</div>
+                    </div>
+                </div>
+                <div class="stat fs-card">
+                    <div class="stat-icon" style="background:#0EA5E9">🎓</div>
+                    <div>
+                        <div class="stat-value">@_data.TotalCourses</div>
+                        <div class="stat-label">دورات متاحة</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Per-course breakdown -->
+            <h2 class="section-title">دوراتي</h2>
+            @if (_data.Courses.Count == 0)
+            {
+                <div class="fs-card fs-center empty">
+                    <div style="font-size:48px">📭</div>
+                    <p class="fs-text-muted">لا توجد دورات متاحة حاليًا. اشترك أولاً في مادة لتظهر هنا.</p>
+                    <a href="/subscribe" class="fs-btn fs-btn-primary">عرض الاشتراكات</a>
+                </div>
+            }
+            else
+            {
+                <div class="courses-grid">
+                    @foreach (var c in _data.Courses)
+                    {
+                        var statusClass = c.ProgressPct == 100 ? "done"
+                                        : c.ProgressPct == 0 ? "new"
+                                        : "active";
+                        <div class="course-row fs-card @statusClass">
+                            <div class="course-head">
+                                <div>
+                                    <h3>@c.Title</h3>
+                                    <small class="fs-text-muted">@c.SubjectName</small>
+                                </div>
+                                <div class="course-pct">@c.ProgressPct%</div>
+                            </div>
+                            <div class="progress-track">
+                                <div class="progress-fill" style="width:@(c.ProgressPct)%"></div>
+                            </div>
+                            <div class="course-foot">
+                                <small>@c.CompletedLessons / @c.TotalLessons درس</small>
+                                @if (c.LastLessonId is not null)
+                                {
+                                    <small class="fs-text-muted">آخر مشاهدة: @FormatRelative(c.LastViewedAtUtc)</small>
+                                }
+                                @if (c.ProgressPct == 100)
+                                {
+                                    <a href="/certificate/@c.CourseId" class="fs-btn fs-btn-primary fs-btn-sm cert-btn">
+                                        🏅 الشهادة
+                                    </a>
+                                }
+                                <a href="/courses/@c.CourseId" class="fs-btn fs-btn-outline fs-btn-sm">
+                                    @(c.ProgressPct == 100 ? "مراجعة" : c.ProgressPct == 0 ? "ابدأ" : "متابعة")
+                                </a>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        }
+    </div>
+</div>
+
+<style>
+    .page { padding: var(--fs-s-10) 0; min-height: calc(100vh - 72px); }
+    .page-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--fs-s-6); flex-wrap: wrap; gap: var(--fs-s-3); }
+    .empty { padding: 60px; text-align: center; }
+    .empty h3 { margin: var(--fs-s-3) 0 var(--fs-s-2); }
+
+    /* Resume bar */
+    .resume-bar {
+        display: flex; justify-content: space-between; align-items: center;
+        padding: var(--fs-s-4); margin-bottom: var(--fs-s-5);
+        background: linear-gradient(120deg, var(--fs-primary-soft), white);
+        border: 1px solid var(--fs-primary);
+        gap: var(--fs-s-3); flex-wrap: wrap;
+    }
+    .resume-title { font-weight: 700; font-size: 17px; margin: 4px 0; }
+
+    /* Stats grid */
+    .stats-grid {
+        display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        gap: var(--fs-s-3); margin-bottom: var(--fs-s-6);
+    }
+    .stat { padding: var(--fs-s-3); display: flex; align-items: center; gap: var(--fs-s-3); }
+    .stat-icon {
+        width: 48px; height: 48px; border-radius: 12px; color: white;
+        display: flex; align-items: center; justify-content: center; font-size: 24px;
+        flex-shrink: 0;
+    }
+    .stat-value { font-size: 22px; font-weight: 800; line-height: 1; }
+    .stat-label { font-size: 12px; color: var(--fs-text-muted); margin-top: 4px; }
+
+    .section-title { font-size: 20px; margin: var(--fs-s-5) 0 var(--fs-s-3); }
+
+    /* Per-course rows */
+    .courses-grid {
+        display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+        gap: var(--fs-s-3);
+    }
+    .course-row { padding: var(--fs-s-4); border-right: 4px solid var(--fs-primary); }
+    .course-row.done { border-color: #10B981; }
+    .course-row.new { border-color: #94A3B8; }
+    .course-head {
+        display: flex; justify-content: space-between; align-items: start;
+        margin-bottom: var(--fs-s-3); gap: var(--fs-s-3);
+    }
+    .course-head h3 { margin: 0 0 2px; font-size: 17px; }
+    .course-pct {
+        font-size: 22px; font-weight: 800; color: var(--fs-primary);
+        flex-shrink: 0;
+    }
+    .course-row.done .course-pct { color: #10B981; }
+    .course-row.new .course-pct { color: #94A3B8; }
+
+    .progress-track {
+        height: 8px; background: var(--fs-bg); border-radius: var(--fs-r-full);
+        overflow: hidden; margin-bottom: var(--fs-s-3);
+    }
+    .progress-fill {
+        height: 100%; background: linear-gradient(90deg, var(--fs-primary), #8B7FE8);
+        border-radius: var(--fs-r-full); transition: width 0.4s ease;
+    }
+    .course-row.done .progress-fill { background: linear-gradient(90deg, #10B981, #34D399); }
+
+    .course-foot {
+        display: flex; justify-content: space-between; align-items: center;
+        gap: var(--fs-s-2); flex-wrap: wrap;
+    }
+    .course-foot small { font-size: 12px; }
+    .fs-btn-sm { padding: 4px 12px; font-size: 12px; }
+</style>
+
+@code {
+    private FSEdu.Shared.Contracts.Courses.StudentProgressDto? _data;
+    private bool _loaded;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            await Load();
+        }
+    }
+
+    private async Task Load()
+    {
+        if (!Auth.IsAuthenticated) { _loaded = true; StateHasChanged(); return; }
+        try { _data = await Api.GetMyProgressAsync(); }
+        catch { _data = null; }
+        _loaded = true;
+        StateHasChanged();
+    }
+
+    private static string FormatRelative(DateTime? utc)
+    {
+        if (utc is null) return "-";
+        var diff = DateTime.UtcNow - utc.Value;
+        if (diff.TotalSeconds < 60) return "الآن";
+        if (diff.TotalMinutes < 60) return $"منذ {(int)diff.TotalMinutes} دقيقة";
+        if (diff.TotalHours < 24) return $"منذ {(int)diff.TotalHours} ساعة";
+        if (diff.TotalDays < 30) return $"منذ {(int)diff.TotalDays} يوم";
+        return utc.Value.ToLocalTime().ToString("yyyy/MM/dd");
+    }
+}

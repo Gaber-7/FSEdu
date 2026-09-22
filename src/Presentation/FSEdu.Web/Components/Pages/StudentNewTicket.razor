@@ -1,0 +1,173 @@
+@page "/student/tickets/new"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject NavigationManager Nav
+
+<PageTitle>سؤال جديد — اسأل مدرس</PageTitle>
+
+<div class="auth-wrapper">
+    <div class="fs-container">
+        <div class="auth-card fs-card fs-card-elevated">
+            <div class="auth-head">
+                <h1>💬 اطرح سؤالك</h1>
+                <p class="fs-text-muted">سيقوم مدرس المنصة بالرد عليك في أقرب وقت</p>
+            </div>
+
+            @if (!string.IsNullOrEmpty(_error))
+            {
+                <div class="fs-alert fs-alert-error"><span>⚠️</span><span>@_error</span></div>
+            }
+
+            <div class="fs-form-group">
+                <label class="fs-label">المادة</label>
+                <select class="fs-select" @bind="_subjectId">
+                    <option value="0">-- اختر المادة --</option>
+                    @if (_subjects is not null)
+                    {
+                        @foreach (var s in _subjects)
+                        {
+                            <option value="@s.Id">@s.NameAr</option>
+                        }
+                    }
+                </select>
+                <small class="fs-text-subtle">يجب أن تكون مشتركًا في المادة لطرح سؤال</small>
+            </div>
+
+            <div class="fs-form-group">
+                <label class="fs-label">عنوان السؤال (مختصر)</label>
+                <input class="fs-input" @bind="_title" placeholder="مثال: لا أفهم درس الكسور" />
+            </div>
+
+            <div class="fs-form-group">
+                <label class="fs-label">تفاصيل السؤال</label>
+                <textarea class="fs-input" rows="6" @bind="_body"
+                          placeholder="اشرح سؤالك بوضوح..."></textarea>
+            </div>
+
+            <div class="fs-form-group">
+                <label class="fs-label">صورة (اختياري)</label>
+                <InputFile OnChange="OnFileSelected" accept="image/*" class="fs-file-input" />
+                @if (_uploading)
+                {
+                    <div style="margin-top:var(--fs-s-2);display:flex;align-items:center;gap:var(--fs-s-2)">
+                        <span class="fs-spinner"></span>
+                        <small>جارٍ الرفع...</small>
+                    </div>
+                }
+                @if (!string.IsNullOrEmpty(_imageUrl))
+                {
+                    <div class="upload-preview">✓ تم رفع الصورة</div>
+                }
+                <small class="fs-text-subtle">يمكنك رفع صورة المسألة أو الكتاب — حد أقصى 5 ميجابايت</small>
+            </div>
+
+            <div class="fs-form-group">
+                <label class="fs-label">الأولوية</label>
+                <div class="priority-chips">
+                    @foreach (var p in new[] { "Low", "Normal", "High" })
+                    {
+                        var pp = p;
+                        <button class="chip @(_priority == pp ? "active" : "")" @onclick="() => _priority = pp">
+                            @PriorityLabel(pp)
+                        </button>
+                    }
+                </div>
+            </div>
+
+            <button class="fs-btn fs-btn-primary fs-btn-lg fs-btn-block" @onclick="Submit" disabled="@_submitting">
+                @if (_submitting) { <span class="fs-spinner"></span><span>جارٍ الإرسال...</span> }
+                else { <span>📤 إرسال السؤال</span> }
+            </button>
+
+            <div class="auth-alt">
+                <a href="/student/tickets">→ أسئلتي</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .auth-wrapper { padding: 60px 0; min-height: calc(100vh - 72px); background: radial-gradient(at 10% 0%, var(--fs-secondary-soft) 0%, transparent 50%); }
+    .auth-card { max-width: 640px; margin: 0 auto; }
+    .auth-head { text-align: center; margin-bottom: var(--fs-s-6); }
+    .auth-head h1 { font-size: 28px; margin: var(--fs-s-2) 0; }
+    .fs-file-input { display: block; width: 100%; padding: var(--fs-s-3); border: 2px dashed var(--fs-border); border-radius: var(--fs-r-md); background: var(--fs-bg); cursor: pointer; font-family: var(--fs-font-body); }
+    .upload-preview { margin-top: var(--fs-s-2); padding: 6px var(--fs-s-3); background: #D1FAE5; color: var(--fs-success); border-radius: var(--fs-r-sm); font-size: 13px; font-weight: 600; }
+    .priority-chips { display: flex; gap: var(--fs-s-2); }
+    .chip { flex: 1; padding: var(--fs-s-3); background: var(--fs-bg); border: 2px solid var(--fs-border); border-radius: var(--fs-r-md); font-family: var(--fs-font-body); font-weight: 600; cursor: pointer; transition: all var(--fs-trans); }
+    .chip:hover { border-color: var(--fs-primary); }
+    .chip.active { border-color: var(--fs-primary); background: var(--fs-primary-soft); color: var(--fs-primary); }
+    .auth-alt { text-align: center; margin-top: var(--fs-s-4); font-size: 14px; }
+</style>
+
+@code {
+    private List<FSEdu.Shared.Contracts.Reference.SubjectDto>? _subjects;
+    private int _subjectId;
+    private string _title = "";
+    private string _body = "";
+    private string _imageUrl = "";
+    private string _priority = "Normal";
+    private bool _uploading;
+    private bool _submitting;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { _subjects = await Api.GetSubjectsAsync(); } catch { }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) { await Auth.RestoreAsync(); StateHasChanged(); }
+    }
+
+    private async Task OnFileSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file is null || file.Size > 5 * 1024 * 1024)
+        { _error = "حجم الملف أكبر من 5 ميجابايت"; return; }
+
+        _error = null;
+        _uploading = true; StateHasChanged();
+        try
+        {
+            using var stream = file.OpenReadStream(5 * 1024 * 1024);
+            var (url, err) = await Api.UploadReceiptAsync(stream, file.Name);
+            if (err is not null) { _error = err.Message; return; }
+            _imageUrl = url!;
+        }
+        catch (Exception ex) { _error = "فشل الرفع: " + ex.Message; }
+        finally { _uploading = false; StateHasChanged(); }
+    }
+
+    private async Task Submit()
+    {
+        _error = null;
+        if (_subjectId == 0) { _error = "اختر المادة"; return; }
+        if (string.IsNullOrWhiteSpace(_title) || _title.Length < 3)
+        { _error = "العنوان يجب أن يكون 3 أحرف على الأقل"; return; }
+        if (string.IsNullOrWhiteSpace(_body) || _body.Length < 5)
+        { _error = "تفاصيل السؤال مطلوبة"; return; }
+
+        _submitting = true;
+        try
+        {
+            var req = new FSEdu.Shared.Contracts.Tickets.CreateTicketRequest(
+                _subjectId, _title.Trim(), _body.Trim(),
+                string.IsNullOrEmpty(_imageUrl) ? null : _imageUrl,
+                _priority);
+
+            var (id, err) = await Api.CreateTicketAsync(req);
+            if (err is not null) { _error = err.Message; return; }
+            Nav.NavigateTo($"/student/tickets/{id}");
+        }
+        catch (Exception ex) { _error = "خطأ: " + ex.Message; }
+        finally { _submitting = false; }
+    }
+
+    private static string PriorityLabel(string p) => p switch
+    {
+        "Low" => "🟢 منخفضة", "Normal" => "🔵 عادية", "High" => "🔴 عاجلة", _ => p
+    };
+}

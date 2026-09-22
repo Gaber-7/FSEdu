@@ -1,0 +1,215 @@
+@page "/courses/discussions/{DiscussionId:guid}"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject NavigationManager Nav
+
+<PageTitle>@(_data?.Title ?? "نقاش")</PageTitle>
+
+<div class="dp-page">
+    <div class="fs-container">
+        @if (!_loaded)
+        {
+            <div class="fs-center" style="padding:80px"><span class="fs-spinner"></span></div>
+        }
+        else if (_data is null)
+        {
+            <div class="fs-card empty">
+                <div style="font-size:64px">🤷</div>
+                <h3>النقاش غير موجود</h3>
+                <a href="/courses" class="fs-btn fs-btn-outline">الدورات</a>
+            </div>
+        }
+        else
+        {
+            <a href="/courses/@_data.CourseId" class="dp-back">← @_data.CourseTitle</a>
+
+            <article class="dp-thread fs-card">
+                <header class="dp-thread-head">
+                    <div>
+                        @if (_data.Pinned) { <span class="dp-tag pin">📌 مثبّت</span> }
+                        @if (_data.Locked) { <span class="dp-tag lock">🔒 مغلق</span> }
+                        <h1>@_data.Title</h1>
+                        <small class="fs-text-muted">@_data.AuthorName · @FormatTime(_data.CreatedAtUtc)
+                            @if (_data.UpdatedAtUtc.HasValue) { <text> · مُعدّل @FormatTime(_data.UpdatedAtUtc.Value)</text> }
+                        </small>
+                    </div>
+                    @if (_data.CanModerate || _data.IsAuthor)
+                    {
+                        <div class="dp-mod">
+                            @if (_data.CanModerate)
+                            {
+                                <button class="fs-btn fs-btn-outline fs-btn-sm" @onclick="TogglePin">
+                                    @(_data.Pinned ? "إلغاء التثبيت" : "تثبيت")
+                                </button>
+                                <button class="fs-btn fs-btn-outline fs-btn-sm" @onclick="ToggleLock">
+                                    @(_data.Locked ? "فتح" : "قفل")
+                                </button>
+                            }
+                            <button class="fs-btn fs-btn-outline fs-btn-sm danger" @onclick="DeleteThread">حذف</button>
+                        </div>
+                    }
+                </header>
+                <p class="dp-thread-body">@_data.Body</p>
+            </article>
+
+            <section class="dp-replies">
+                <h3>💬 @_data.Replies.Length ردّ</h3>
+                @foreach (var r in _data.Replies)
+                {
+                    <article class="dp-reply">
+                        <div class="dp-reply-avatar">@r.AuthorName.FirstOrDefault()</div>
+                        <div class="dp-reply-body">
+                            <header>
+                                <strong>@r.AuthorName</strong>
+                                <small class="fs-text-muted">@FormatTime(r.CreatedAtUtc)</small>
+                                @if (r.CanDelete)
+                                {
+                                    <button class="dp-rm" title="حذف" @onclick="() => DeleteReply(r.Id)">🗑</button>
+                                }
+                            </header>
+                            <p>@r.Body</p>
+                        </div>
+                    </article>
+                }
+            </section>
+
+            @if (_data.CanReply)
+            {
+                <div class="dp-compose fs-card">
+                    <h3>اكتب ردّك</h3>
+                    <textarea class="dp-input" rows="4" maxlength="4000"
+                              placeholder="شارك رأيك..."
+                              @bind="_reply" @bind:event="oninput"></textarea>
+                    @if (!string.IsNullOrEmpty(_replyError))
+                    {
+                        <div class="fs-alert fs-alert-error">@_replyError</div>
+                    }
+                    <button class="fs-btn fs-btn-primary" @onclick="SendReply" disabled="@_replying">
+                        @(_replying ? "جارٍ الإرسال..." : "إرسال الرد")
+                    </button>
+                </div>
+            }
+            else if (_data.Locked)
+            {
+                <div class="fs-alert fs-alert-info">🔒 هذا النقاش مغلق ولا تستطيع الرد.</div>
+            }
+        }
+    </div>
+</div>
+
+<style>
+    .dp-page { padding: var(--fs-s-8) 0; min-height: calc(100vh - 72px); }
+    .dp-back { display: inline-block; margin-bottom: var(--fs-s-3); color: var(--fs-text-muted); text-decoration: none; font-size: 14px; }
+    .dp-back:hover { color: var(--fs-primary); }
+
+    .empty { padding: 60px; text-align: center; }
+    .empty h3 { margin: var(--fs-s-3) 0 var(--fs-s-4); }
+
+    .dp-thread { padding: var(--fs-s-5); margin-bottom: var(--fs-s-4); }
+    .dp-thread-head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--fs-s-3); margin-bottom: var(--fs-s-3); flex-wrap: wrap; }
+    .dp-thread-head h1 { margin: 4px 0 0; font-size: 22px; }
+    .dp-mod { display: flex; gap: var(--fs-s-2); flex-wrap: wrap; }
+    .dp-mod .danger { color: var(--fs-danger); border-color: var(--fs-danger); }
+    .dp-tag { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: var(--fs-r-full); margin-left: 4px; }
+    .dp-tag.pin { background: var(--fs-primary-soft); color: var(--fs-primary); }
+    .dp-tag.lock { background: #FEE2E2; color: #991B1B; }
+    .dp-thread-body { margin: 0; line-height: 1.7; font-size: 15px; white-space: pre-wrap; }
+
+    .dp-replies h3 { font-size: 16px; margin: 0 0 var(--fs-s-3); }
+    .dp-reply { display: flex; gap: var(--fs-s-3); padding: var(--fs-s-3); background: var(--fs-bg); border-radius: var(--fs-r-md); margin-bottom: var(--fs-s-2); }
+    .dp-reply-avatar {
+        width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0;
+        background: linear-gradient(135deg, var(--fs-primary), var(--fs-secondary));
+        color: white; font-weight: 800; font-size: 16px;
+        display: flex; align-items: center; justify-content: center;
+    }
+    .dp-reply-body { flex: 1; min-width: 0; }
+    .dp-reply-body header { display: flex; align-items: center; gap: var(--fs-s-2); margin-bottom: 4px; }
+    .dp-reply-body p { margin: 0; line-height: 1.7; white-space: pre-wrap; }
+    .dp-rm { background: transparent; border: none; cursor: pointer; opacity: 0.5; margin-right: auto; }
+    .dp-rm:hover { opacity: 1; color: var(--fs-danger); }
+
+    .dp-compose { padding: var(--fs-s-4); margin-top: var(--fs-s-4); }
+    .dp-compose h3 { margin: 0 0 var(--fs-s-2); font-size: 15px; }
+    .dp-input { width: 100%; padding: var(--fs-s-3); border: 1px solid var(--fs-border); border-radius: var(--fs-r-md); font-family: inherit; font-size: 14px; resize: vertical; margin-bottom: var(--fs-s-2); }
+    .dp-input:focus { outline: none; border-color: var(--fs-primary); }
+</style>
+
+@code {
+    [Parameter] public Guid DiscussionId { get; set; }
+
+    private FSEdu.Shared.Contracts.Courses.DiscussionDetailDto? _data;
+    private bool _loaded;
+    private string _reply = "";
+    private bool _replying;
+    private string? _replyError;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            await Load();
+        }
+    }
+
+    private async Task Load()
+    {
+        _data = await Api.GetDiscussionAsync(DiscussionId);
+        _loaded = true;
+        StateHasChanged();
+    }
+
+    private async Task SendReply()
+    {
+        _replyError = null;
+        if (_reply.Trim().Length < 2) { _replyError = "الرد قصير جدًا"; return; }
+        _replying = true; StateHasChanged();
+        try
+        {
+            var err = await Api.PostDiscussionReplyAsync(DiscussionId, _reply.Trim());
+            if (err is not null) { _replyError = err.Message ?? "تعذّر الإرسال"; return; }
+            _reply = "";
+            await Load();
+        }
+        finally { _replying = false; StateHasChanged(); }
+    }
+
+    private async Task DeleteThread()
+    {
+        var ok = await Api.DeleteDiscussionAsync(DiscussionId);
+        if (ok && _data is not null) Nav.NavigateTo($"/courses/{_data.CourseId}");
+    }
+
+    private async Task DeleteReply(Guid replyId)
+    {
+        var ok = await Api.DeleteDiscussionReplyAsync(replyId);
+        if (ok) await Load();
+    }
+
+    private async Task TogglePin()
+    {
+        if (_data is null) return;
+        var ok = await Api.ToggleDiscussionPinAsync(DiscussionId, !_data.Pinned);
+        if (ok) await Load();
+    }
+
+    private async Task ToggleLock()
+    {
+        if (_data is null) return;
+        var ok = await Api.ToggleDiscussionLockAsync(DiscussionId, !_data.Locked);
+        if (ok) await Load();
+    }
+
+    private static string FormatTime(DateTime utc)
+    {
+        var local = utc.ToLocalTime();
+        var diff = DateTime.Now - local;
+        if (diff.TotalMinutes < 1) return "الآن";
+        if (diff.TotalMinutes < 60) return $"منذ {(int)diff.TotalMinutes} د";
+        if (diff.TotalHours < 24) return $"منذ {(int)diff.TotalHours} س";
+        if (diff.TotalDays < 7) return $"منذ {(int)diff.TotalDays} يوم";
+        return local.ToString("yyyy/MM/dd HH:mm");
+    }
+}

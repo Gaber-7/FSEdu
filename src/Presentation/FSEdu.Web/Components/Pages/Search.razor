@@ -1,0 +1,239 @@
+@page "/search"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<PageTitle>بحث — @(_q ?? "")</PageTitle>
+
+<div class="page">
+    <div class="fs-container">
+        <div class="search-bar">
+            <span class="search-ic">🔍</span>
+            <input class="fs-input search-input"
+                   placeholder="ابحث في الدورات والحصص والتسجيلات والدروس..."
+                   @bind="_q" @bind:event="oninput"
+                   @onkeyup="OnKeyUp" />
+            <button class="fs-btn fs-btn-primary" @onclick="DoSearch">بحث</button>
+        </div>
+
+        @if (!Auth.IsAuthenticated)
+        {
+            <div class="fs-alert fs-alert-error">يجب تسجيل الدخول للبحث. <a href="/login">دخول</a></div>
+        }
+        else if (string.IsNullOrWhiteSpace(_q) || _q.Trim().Length < 2)
+        {
+            <div class="hint fs-card">
+                <p class="fs-text-muted">اكتب على الأقل حرفين للبدء.</p>
+            </div>
+            @if (_history.Count > 0)
+            {
+                <div class="history-card fs-card">
+                    <div class="history-head">
+                        <h3>🕘 آخر بحوثك</h3>
+                        <button class="link-btn" @onclick="ClearHistory">مسح الكل</button>
+                    </div>
+                    <div class="history-list">
+                        @foreach (var h in _history)
+                        {
+                            <div class="history-item">
+                                <button class="hi-text" @onclick="() => RunHistory(h)">🔍 @h</button>
+                                <button class="hi-rm" title="إزالة" @onclick="() => RemoveHistory(h)">×</button>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        }
+        else if (_busy)
+        {
+            <div class="fs-center" style="padding:40px"><span class="fs-spinner"></span></div>
+        }
+        else if (_data is null || _data.TotalResults == 0)
+        {
+            <div class="fs-card fs-center empty">
+                <div style="font-size:48px">🔎</div>
+                <h3>لا توجد نتائج لـ "@_q"</h3>
+                <p class="fs-text-muted">جرّب كلمات مفتاحية مختلفة أو اختصرها.</p>
+            </div>
+        }
+        else
+        {
+            <p class="results-meta">@_data.TotalResults نتيجة لبحثك عن "<strong>@_q</strong>"</p>
+
+            <SearchSection Title="📚 الدورات" Kind="course" Items="_data.Courses" />
+            <SearchSection Title="🎥 حصص قادمة/مباشرة" Kind="live" Items="_data.LiveSessions" />
+            <SearchSection Title="📼 تسجيلات" Kind="recording" Items="_data.Recordings" />
+            <SearchSection Title="🎬 دروس" Kind="lesson" Items="_data.Lessons" />
+        }
+    </div>
+</div>
+
+<style>
+    .page { padding: var(--fs-s-8) 0; min-height: calc(100vh - 72px); }
+
+    .search-bar {
+        display: flex; gap: var(--fs-s-2); align-items: center;
+        margin-bottom: var(--fs-s-5); position: relative;
+    }
+    .search-ic {
+        position: absolute; right: 14px; pointer-events: none; font-size: 18px;
+    }
+    .search-input { padding-right: 42px; flex: 1; font-size: 15px; }
+
+    .hint { padding: 40px; text-align: center; }
+    .empty { padding: 60px; text-align: center; }
+    .empty h3 { margin: var(--fs-s-3) 0 var(--fs-s-2); }
+    .results-meta { color: var(--fs-text-muted); margin-bottom: var(--fs-s-4); }
+
+    .results-section { margin-bottom: var(--fs-s-6); }
+    .section-title { font-size: 17px; margin: 0 0 var(--fs-s-3); }
+    .section-title .count { color: var(--fs-text-muted); font-weight: 400; font-size: 13px; }
+
+    .results-list { display: flex; flex-direction: column; gap: var(--fs-s-2); }
+    .result-row {
+        display: flex; gap: var(--fs-s-3); align-items: flex-start;
+        padding: var(--fs-s-3); border-radius: var(--fs-r-md);
+        background: white; border: 1px solid var(--fs-border);
+        text-decoration: none; color: inherit; transition: all 0.15s;
+    }
+    .result-row:hover {
+        border-color: var(--fs-primary);
+        box-shadow: 0 4px 12px rgba(91,79,229,0.12);
+        transform: translateY(-1px);
+    }
+    .kind-icon { font-size: 22px; flex-shrink: 0; line-height: 1.2; }
+    .result-body { flex: 1; min-width: 0; }
+    .result-body strong { display: block; font-size: 15px; margin-bottom: 2px; color: var(--fs-text); }
+    .result-body small { display: block; font-size: 12px; }
+    .snippet {
+        margin: 6px 0 0; font-size: 13px; color: var(--fs-text-muted); line-height: 1.5;
+    }
+
+    .history-card { padding: var(--fs-s-4); margin-top: var(--fs-s-3); }
+    .history-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--fs-s-3); }
+    .history-head h3 { margin: 0; font-size: 16px; }
+    .link-btn { background: none; border: none; color: var(--fs-primary); cursor: pointer; font-size: 13px; font-family: inherit; }
+    .history-list { display: flex; flex-wrap: wrap; gap: var(--fs-s-2); }
+    .history-item {
+        display: inline-flex; align-items: center; gap: 4px;
+        background: var(--fs-bg); border-radius: var(--fs-r-full);
+        padding: 2px 4px 2px 12px; border: 1px solid var(--fs-border);
+        transition: all var(--fs-trans);
+    }
+    .history-item:hover { border-color: var(--fs-primary); background: var(--fs-primary-soft); }
+    .hi-text {
+        background: transparent; border: none; cursor: pointer;
+        padding: 4px 0; font-family: inherit; font-size: 13px; color: var(--fs-text);
+    }
+    .hi-rm {
+        background: transparent; border: none; cursor: pointer;
+        width: 24px; height: 24px; border-radius: 50%;
+        color: var(--fs-text-muted); font-size: 16px; line-height: 1;
+    }
+    .hi-rm:hover { background: var(--fs-danger); color: white; }
+</style>
+
+@code {
+    [SupplyParameterFromQuery] public string? Q { get; set; }
+
+    private string? _q;
+    private FSEdu.Shared.Contracts.Search.SearchResponseDto? _data;
+    private bool _busy;
+    private CancellationTokenSource? _debounceCts;
+    private List<string> _history = new();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            await LoadHistory();
+            if (!string.IsNullOrEmpty(Q))
+            {
+                _q = Q;
+                StateHasChanged();
+                await DoSearch();
+            }
+            else { StateHasChanged(); }
+        }
+    }
+
+    private async Task LoadHistory()
+    {
+        try { _history = (await JS.InvokeAsync<string[]>("fseduSearchHistory.get")).ToList(); }
+        catch { _history = new(); }
+    }
+
+    private async Task ClearHistory()
+    {
+        try { await JS.InvokeVoidAsync("fseduSearchHistory.clear"); } catch { }
+        _history = new();
+        StateHasChanged();
+    }
+
+    private async Task RemoveHistory(string q)
+    {
+        try { await JS.InvokeVoidAsync("fseduSearchHistory.remove", q); } catch { }
+        _history.Remove(q);
+        StateHasChanged();
+    }
+
+    private async Task RunHistory(string q)
+    {
+        _q = q;
+        StateHasChanged();
+        await DoSearch();
+    }
+
+    private async Task OnKeyUp(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") { await DoSearch(); return; }
+
+        // Debounce 350ms while typing
+        _debounceCts?.Cancel();
+        _debounceCts = new CancellationTokenSource();
+        var token = _debounceCts.Token;
+        try { await Task.Delay(350, token); } catch { return; }
+        if (token.IsCancellationRequested) return;
+        if (!string.IsNullOrWhiteSpace(_q) && _q.Trim().Length >= 2)
+            await DoSearch();
+    }
+
+    private async Task DoSearch()
+    {
+        if (string.IsNullOrWhiteSpace(_q) || _q.Trim().Length < 2)
+        {
+            _data = null; StateHasChanged(); return;
+        }
+        _busy = true; StateHasChanged();
+        try
+        {
+            var query = _q.Trim();
+            _data = await Api.SearchAsync(query);
+            // Reflect in URL so the page is shareable / refreshable
+            var url = Nav.GetUriWithQueryParameter("q", query);
+            Nav.NavigateTo(url, forceLoad: false, replace: true);
+
+            // Record in history once results came back
+            if (_data is not null && _data.TotalResults > 0)
+            {
+                try { await JS.InvokeVoidAsync("fseduSearchHistory.add", query); }
+                catch { }
+                await LoadHistory();
+            }
+        }
+        catch { _data = null; }
+        finally { _busy = false; StateHasChanged(); }
+    }
+
+    private static string KindIcon(string kind) => kind switch
+    {
+        "course" => "📚",
+        "live" => "🎥",
+        "recording" => "📼",
+        "lesson" => "🎬",
+        _ => "🔎"
+    };
+}

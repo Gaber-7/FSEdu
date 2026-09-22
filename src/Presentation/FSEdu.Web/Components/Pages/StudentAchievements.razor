@@ -1,0 +1,209 @@
+@page "/student/achievements"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+
+<PageTitle>إنجازاتي — FSEdu</PageTitle>
+
+<div class="page">
+    <div class="fs-container">
+        @if (!_loaded)
+        {
+            <div class="fs-center" style="padding:60px"><span class="fs-spinner"></span></div>
+        }
+        else if (!Auth.IsAuthenticated)
+        {
+            <div class="fs-alert fs-alert-error">يجب تسجيل الدخول. <a href="/login">دخول</a></div>
+        }
+        else if (_data is null)
+        {
+            <div class="fs-alert fs-alert-error">تعذّر تحميل البيانات</div>
+        }
+        else
+        {
+            <div class="hero-banner">
+                <div class="banner-content">
+                    <h1>🏆 إنجازاتك يا @_data.FullName</h1>
+                    <p>تابع تقدمك واكسب المزيد من الشارات</p>
+                </div>
+            </div>
+
+            <div class="stats-row">
+                <div class="stat-card xp">
+                    <div class="stat-icon">⭐</div>
+                    <div>
+                        <strong>@_data.XpPoints</strong>
+                        <span>نقاط XP</span>
+                    </div>
+                </div>
+                <div class="stat-card streak">
+                    <div class="stat-icon">🔥</div>
+                    <div>
+                        <strong>@_data.CurrentStreakDays</strong>
+                        <span>يوم متواصل</span>
+                    </div>
+                </div>
+                <div class="stat-card best">
+                    <div class="stat-icon">💪</div>
+                    <div>
+                        <strong>@_data.LongestStreakDays</strong>
+                        <span>أطول سلسلة</span>
+                    </div>
+                </div>
+                <div class="stat-card rank">
+                    <div class="stat-icon">🏅</div>
+                    <div>
+                        <strong>#@_data.GlobalRank</strong>
+                        <span>ترتيبك العالمي</span>
+                    </div>
+                </div>
+                <div class="stat-card stage-rank">
+                    <div class="stat-icon">📚</div>
+                    <div>
+                        <strong>#@_data.StageRank / @_data.TotalStudentsInStage</strong>
+                        <span>في مرحلتك</span>
+                    </div>
+                </div>
+            </div>
+
+            @if (_data.EarnedBadges.Any())
+            {
+                <h2>🎖️ شاراتك (@_data.EarnedBadges.Length)</h2>
+                <div class="badges-grid earned">
+                    @foreach (var b in _data.EarnedBadges)
+                    {
+                        <div class="badge-card earned-badge" title="@b.NameAr">
+                            <div class="badge-icon">@BadgeEmoji(b.Code)</div>
+                            <strong>@b.NameAr</strong>
+                            @if (b.EarnedAtUtc.HasValue)
+                            {
+                                <small>حصلت عليها @b.EarnedAtUtc.Value.ToString("yyyy/MM/dd")</small>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+
+            @if (_data.AvailableBadges.Any())
+            {
+                <h2 style="margin-top:var(--fs-s-8)">🎯 شارات لم تكسبها بعد</h2>
+                <div class="badges-grid">
+                    @foreach (var b in _data.AvailableBadges)
+                    {
+                        <div class="badge-card locked" title="@b.NameAr">
+                            <div class="badge-icon">@BadgeEmoji(b.Code)</div>
+                            <strong>@b.NameAr</strong>
+                            <small>🔒 لم تُكتسب بعد</small>
+                        </div>
+                    }
+                </div>
+            }
+
+            <div class="cta-card">
+                <h3>🚀 استمر في التعلم!</h3>
+                <p>كل درس تُكمله، كل اختبار تنجح فيه، كل يوم تدرس فيه — يقربك من شارة جديدة</p>
+                <div class="cta-actions">
+                    <a href="/courses" class="fs-btn fs-btn-primary">استعرض الدورات</a>
+                    <a href="/leaderboard" class="fs-btn fs-btn-outline">قائمة المتصدرين</a>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .page { padding: var(--fs-s-10) 0; min-height: calc(100vh - 72px); }
+
+    .hero-banner {
+        background: linear-gradient(135deg, var(--fs-primary), var(--fs-secondary));
+        border-radius: var(--fs-r-xl);
+        padding: var(--fs-s-8);
+        color: white;
+        margin-bottom: var(--fs-s-8);
+        text-align: center;
+        position: relative;
+        overflow: hidden;
+    }
+    .hero-banner h1 { color: white; font-size: 28px; margin: 0 0 var(--fs-s-2); }
+    .hero-banner p { margin: 0; opacity: 0.95; }
+
+    .stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--fs-s-3); margin-bottom: var(--fs-s-8); }
+    .stat-card {
+        display: flex; align-items: center; gap: var(--fs-s-3);
+        padding: var(--fs-s-4);
+        background: var(--fs-surface); border: 1px solid var(--fs-border);
+        border-radius: var(--fs-r-md);
+    }
+    .stat-icon { font-size: 32px; }
+    .stat-card strong { display: block; font-size: 22px; font-weight: 800; color: var(--fs-primary); line-height: 1; }
+    .stat-card span { font-size: 12px; color: var(--fs-text-muted); }
+    .stat-card.streak strong { color: var(--fs-danger); }
+    .stat-card.best strong { color: var(--fs-success); }
+    .stat-card.rank strong { color: #B56E00; }
+
+    h2 { font-size: 22px; margin-bottom: var(--fs-s-4); }
+
+    .badges-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+        gap: var(--fs-s-3);
+    }
+    .badge-card {
+        background: var(--fs-surface); border: 1px solid var(--fs-border);
+        border-radius: var(--fs-r-lg);
+        padding: var(--fs-s-5);
+        text-align: center;
+        transition: all var(--fs-trans);
+    }
+    .badge-card.earned-badge {
+        background: linear-gradient(135deg, var(--fs-accent-soft), white);
+        border-color: var(--fs-accent);
+        box-shadow: 0 4px 12px rgba(255,181,71,0.15);
+    }
+    .badge-card.earned-badge:hover { transform: translateY(-4px) scale(1.02); }
+    .badge-card.locked { opacity: 0.55; filter: grayscale(0.6); }
+    .badge-icon { font-size: 56px; margin-bottom: var(--fs-s-2); }
+    .badge-card strong { display: block; font-size: 14px; margin-bottom: 4px; }
+    .badge-card small { font-size: 11px; color: var(--fs-text-muted); }
+
+    .cta-card {
+        margin-top: var(--fs-s-10);
+        padding: var(--fs-s-8);
+        background: var(--fs-primary-soft);
+        border-radius: var(--fs-r-xl);
+        text-align: center;
+    }
+    .cta-card h3 { font-size: 22px; margin: 0 0 var(--fs-s-2); }
+    .cta-card p { margin: 0 0 var(--fs-s-4); color: var(--fs-text-muted); }
+    .cta-actions { display: flex; gap: var(--fs-s-3); justify-content: center; flex-wrap: wrap; }
+</style>
+
+@code {
+    private FSEdu.Shared.Contracts.Gamification.MyAchievementsDto? _data;
+    private bool _loaded;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            if (Auth.IsAuthenticated)
+            {
+                try { _data = await Api.GetMyAchievementsAsync(); }
+                catch { }
+            }
+            _loaded = true; StateHasChanged();
+        }
+    }
+
+    private static string BadgeEmoji(string code) => code switch
+    {
+        "first-lesson" => "🌱",
+        "week-streak" => "🔥",
+        "month-streak" => "💎",
+        "perfect-score" => "💯",
+        "top-ten" => "👑",
+        "helpful" => "🤝",
+        _ => "🏆"
+    };
+}

@@ -1,0 +1,804 @@
+@page "/lessons/{LessonId:guid}/watch"
+@rendermode InteractiveServer
+@implements IAsyncDisposable
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject IConfiguration Config
+
+<PageTitle>@(_lesson?.Title ?? "درس")</PageTitle>
+
+<div class="watch-page">
+    <div class="fs-container">
+        @if (!_loaded)
+        {
+            <div class="fs-center" style="padding:80px"><span class="fs-spinner"></span></div>
+        }
+        else if (_lesson is null)
+        {
+            <div class="fs-alert fs-alert-error">الدرس غير موجود</div>
+        }
+        else
+        {
+            <a href="/courses/@_lesson.CourseId" class="fs-text-muted" style="font-size:14px;display:inline-block;margin-bottom:var(--fs-s-3)">
+                ← @_lesson.CourseTitle
+            </a>
+            <h1>@_lesson.Title</h1>
+
+            <div class="player-wrap">
+                @if (!_lesson.HasAccess)
+                {
+                    <div class="no-access">
+                        <div class="lock-icon">🔒</div>
+                        <h2>هذا الدرس يتطلّب اشتراكًا</h2>
+                        <p>اشترك في المادة أو في الباقة الشاملة للوصول لكل الدروس</p>
+                        <a href="/pricing" class="fs-btn fs-btn-primary fs-btn-lg">استعرض الباقات</a>
+                    </div>
+                }
+                else if (string.IsNullOrEmpty(_lesson.VideoUrl))
+                {
+                    <div class="no-access">
+                        <div class="lock-icon">📹</div>
+                        <h2>لم يتم رفع الفيديو بعد</h2>
+                        <p>المدرس لم يُضف محتوى هذا الدرس. يرجى المحاولة لاحقًا.</p>
+                    </div>
+                }
+                else
+                {
+                    <div class="video-player">
+                        @* Simple video player — يمكن استبداله لاحقًا بـ HLS player + DRM *@
+                        @if (IsYouTube(_lesson.VideoUrl))
+                        {
+                            <iframe src="@GetYouTubeEmbed(_lesson.VideoUrl)"
+                                    frameborder="0"
+                                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                    allowfullscreen></iframe>
+                        }
+                        else
+                        {
+                            <video id="lesson-player" controls controlsList="nodownload" oncontextmenu="return false;">
+                                <source src="@_lesson.VideoUrl" />
+                            </video>
+                        }
+
+                        <div class="watermark">
+                            @Auth.CurrentUser?.FullName · @Auth.CurrentUser?.Phone
+                        </div>
+                    </div>
+
+                    @if (!IsYouTube(_lesson.VideoUrl))
+                    {
+                        <div class="speed-bar">
+                            <span class="speed-label">⚡ السرعة:</span>
+                            @foreach (var rate in _speeds)
+                            {
+                                <button class="speed-btn @(_currentSpeed == rate ? "active" : "")"
+                                        @onclick="() => SetSpeed(rate)">
+                                    @(rate == 1.0 ? "عادي" : $"{rate}x")
+                                </button>
+                            }
+                        </div>
+                    }
+                }
+            </div>
+
+            @if ((_lesson.HasAccess || _lesson.IsFreePreview) && _reactions is not null)
+            {
+                <div class="rx-section fs-card">
+                    <h3>🤝 ما رأيك في الدرس؟</h3>
+                    <div class="rx-row">
+                        <button class="rx-btn @(_reactions.MyHelpful ? "active" : "")"
+                                @onclick='@(() => ToggleReaction("Helpful"))' disabled="@_rxBusy">
+                            <span class="rx-emoji">👍</span>
+                            <span class="rx-label">مفيد</span>
+                            <span class="rx-count">@_reactions.HelpfulCount</span>
+                        </button>
+                        <button class="rx-btn @(_reactions.MyConfusing ? "active" : "")"
+                                @onclick='@(() => ToggleReaction("Confusing"))' disabled="@_rxBusy">
+                            <span class="rx-emoji">🤔</span>
+                            <span class="rx-label">محتاج توضيح</span>
+                            <span class="rx-count">@_reactions.ConfusingCount</span>
+                        </button>
+                        <button class="rx-btn @(_reactions.MyLoved ? "active" : "")"
+                                @onclick='@(() => ToggleReaction("Loved"))' disabled="@_rxBusy">
+                            <span class="rx-emoji">🎉</span>
+                            <span class="rx-label">رائع!</span>
+                            <span class="rx-count">@_reactions.LovedCount</span>
+                        </button>
+                    </div>
+                </div>
+            }
+
+            @if (_lesson.HasAccess && Auth.IsInRole("Student") && !string.IsNullOrEmpty(_lesson.VideoUrl) && !IsYouTube(_lesson.VideoUrl))
+            {
+                <div class="markers-section fs-card">
+                    <div class="mk-head">
+                        <h3>🔖 علامات الدرس</h3>
+                        <button class="fs-btn fs-btn-primary fs-btn-sm" @onclick="AddMarkerHere" disabled="@_savingMarker">
+                            @(_savingMarker ? "..." : "🔖 احفظ هذه اللحظة")
+                        </button>
+                    </div>
+                    @if (_showMarkerLabel)
+                    {
+                        <div class="mk-label-row">
+                            <input type="text" class="mk-label" placeholder="عنوان (اختياري — مثلاً: مثال محلول)"
+                                   maxlength="255" @bind="_pendingLabel" @bind:event="oninput" />
+                            <button class="fs-btn fs-btn-outline fs-btn-sm" @onclick="SaveMarkerLabel">حفظ</button>
+                            <button class="fs-btn fs-btn-ghost fs-btn-sm" @onclick="SkipMarkerLabel">تخطّ</button>
+                        </div>
+                    }
+                    @if (_markers is null)
+                    {
+                        <p class="fs-text-muted">جارٍ التحميل...</p>
+                    }
+                    else if (_markers.Count == 0)
+                    {
+                        <p class="fs-text-muted">لا توجد علامات. اضغط الزر أعلاه لحفظ لحظة مهمّة.</p>
+                    }
+                    else
+                    {
+                        <div class="mk-list">
+                            @foreach (var m in _markers)
+                            {
+                                <div class="mk-item">
+                                    <button class="mk-time" @onclick="() => SeekTo(m.PositionSec)" title="اضغط للانتقال">
+                                        ▶ @FormatPos(m.PositionSec)
+                                    </button>
+                                    <span class="mk-text">@(string.IsNullOrEmpty(m.Label) ? "بدون عنوان" : m.Label)</span>
+                                    <button class="mk-del" title="حذف" @onclick="() => DeleteMarker(m.Id)">🗑</button>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+
+            <div class="lesson-meta fs-card">
+                <div class="meta-row">
+                    <span>🏷️ النوع</span>
+                    <strong>@TypeLabel(_lesson.Type)</strong>
+                </div>
+                <div class="meta-row">
+                    <span>⏱️ المدة</span>
+                    <strong>@FormatDuration(_lesson.DurationSeconds)</strong>
+                </div>
+                <div class="meta-row">
+                    <span>📚 ترتيب الدرس</span>
+                    <strong>@_lesson.OrderNum</strong>
+                </div>
+            </div>
+
+            @if (_lesson.HasAccess || _lesson.IsFreePreview)
+            {
+                <div class="attachments-section fs-card">
+                    <div class="att-head">
+                        <h3>📎 مرفقات الدرس</h3>
+                        @if (Auth.IsInRole("Teacher") && _isCourseTeacher)
+                        {
+                            <button class="fs-btn fs-btn-outline fs-btn-sm" @onclick="() => _showUpload = !_showUpload">
+                                @(_showUpload ? "إغلاق" : "➕ رفع مرفق")
+                            </button>
+                        }
+                    </div>
+
+                    @if (_showUpload && Auth.IsInRole("Teacher") && _isCourseTeacher)
+                    {
+                        <div class="att-uploader">
+                            <input type="text" class="att-input" placeholder="عنوان المرفق (اختياري — يُؤخذ من اسم الملف)"
+                                   maxlength="255" @bind="_uploadTitle" />
+                            <InputFile OnChange="OnFileSelected" disabled="@_uploading" class="att-file" />
+                            @if (_uploading)
+                            {
+                                <div class="att-progress">جارٍ الرفع...</div>
+                            }
+                            @if (!string.IsNullOrEmpty(_uploadError))
+                            {
+                                <div class="fs-alert fs-alert-error">@_uploadError</div>
+                            }
+                        </div>
+                    }
+
+                    @if (_attachments is null)
+                    {
+                        <p class="fs-text-muted">جارٍ التحميل...</p>
+                    }
+                    else if (_attachments.Count == 0)
+                    {
+                        <p class="fs-text-muted">لا توجد مرفقات لهذا الدرس.</p>
+                    }
+                    else
+                    {
+                        <div class="att-list">
+                            @foreach (var a in _attachments)
+                            {
+                                <div class="att-item">
+                                    <span class="att-icon">@FileIcon(a.FileType)</span>
+                                    <div class="att-info">
+                                        <strong>@a.Title</strong>
+                                        <small>@a.FileType.ToUpperInvariant() · @FormatSize(a.SizeBytes)</small>
+                                    </div>
+                                    <a href="@AbsoluteUrl(a.FileUrl)" target="_blank" rel="noopener"
+                                       class="fs-btn fs-btn-outline fs-btn-sm" download>
+                                        ⬇ تحميل
+                                    </a>
+                                    @if (Auth.IsInRole("Teacher") && _isCourseTeacher)
+                                    {
+                                        <button class="att-del" title="حذف"
+                                                @onclick="() => DeleteAttachment(a.Id)"
+                                                disabled="@_busyAtt.Contains(a.Id)">🗑</button>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+
+            @if (_lesson.HasAccess && Auth.IsInRole("Student"))
+            {
+                <div class="notes-section fs-card">
+                    <div class="notes-head">
+                        <h3>📝 ملاحظاتي على الدرس</h3>
+                        <span class="notes-status @_noteStatusClass">@_noteStatus</span>
+                    </div>
+                    <p class="notes-hint">ملاحظاتك خاصة بك ولا يراها أحد. تُحفظ تلقائيًا أثناء الكتابة.</p>
+                    <textarea class="notes-area"
+                              rows="8"
+                              maxlength="8000"
+                              placeholder="اكتب ملخّصك، النقاط المهمّة، أو أسئلة تريد مراجعتها لاحقًا..."
+                              value="@_noteBody"
+                              @oninput="OnNoteInput"
+                              @onblur="FlushNoteImmediate"></textarea>
+                    <div class="notes-footer">
+                        <small>@_noteBody.Length / 8000 حرف</small>
+                        @if (_noteUpdatedAt is DateTime ts)
+                        {
+                            <small class="fs-text-muted">آخر حفظ: @ts.ToLocalTime().ToString("HH:mm")</small>
+                        }
+                    </div>
+                </div>
+            }
+
+            <div class="qa-section">
+                <LessonQABlock LessonId="@LessonId" />
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .watch-page { padding: var(--fs-s-8) 0; min-height: calc(100vh - 72px); background: var(--fs-bg); }
+    .watch-page h1 { margin-bottom: var(--fs-s-4); font-size: clamp(1.5rem, 3vw, 2rem); }
+    .qa-section { margin-top: var(--fs-s-8); padding: var(--fs-s-5); background: white; border-radius: var(--fs-r-md); }
+
+    .player-wrap { margin-bottom: var(--fs-s-6); }
+
+    .speed-bar {
+        display: flex; align-items: center; gap: var(--fs-s-2);
+        padding: var(--fs-s-2) var(--fs-s-3);
+        margin-top: var(--fs-s-2);
+        background: var(--fs-surface);
+        border: 1px solid var(--fs-border);
+        border-radius: var(--fs-r-md);
+        flex-wrap: wrap;
+    }
+    .speed-label { font-size: 13px; color: var(--fs-text-muted); font-weight: 600; }
+    .speed-btn {
+        background: var(--fs-bg); border: 1px solid var(--fs-border);
+        padding: 4px 12px; border-radius: var(--fs-r-full);
+        cursor: pointer; font-family: inherit;
+        font-size: 13px; font-weight: 600; color: var(--fs-text);
+        transition: all var(--fs-trans);
+    }
+    .speed-btn:hover { border-color: var(--fs-primary); color: var(--fs-primary); }
+    .speed-btn.active { background: var(--fs-primary); color: white; border-color: var(--fs-primary); }
+
+    .video-player {
+        position: relative;
+        aspect-ratio: 16/9;
+        background: black;
+        border-radius: var(--fs-r-xl);
+        overflow: hidden;
+        box-shadow: var(--fs-sh-xl);
+    }
+    .video-player iframe, .video-player video { width: 100%; height: 100%; }
+
+    .watermark {
+        position: absolute; top: var(--fs-s-3); left: var(--fs-s-3);
+        background: rgba(0,0,0,0.4); color: white;
+        padding: 4px 10px; border-radius: var(--fs-r-sm);
+        font-size: 12px; font-family: monospace; direction: ltr;
+        pointer-events: none;
+    }
+
+    .no-access {
+        aspect-ratio: 16/9;
+        background: linear-gradient(135deg, var(--fs-primary-dark), var(--fs-primary));
+        border-radius: var(--fs-r-xl);
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        color: white; gap: var(--fs-s-3);
+        text-align: center;
+        padding: var(--fs-s-6);
+    }
+    .no-access h2 { color: white; font-size: 24px; margin: 0; }
+    .no-access p { color: rgba(255,255,255,0.85); margin: 0; }
+    .no-access .fs-btn { margin-top: var(--fs-s-3); background: white; color: var(--fs-primary); border: none; }
+    .lock-icon { font-size: 64px; }
+
+    .lesson-meta { display: flex; gap: var(--fs-s-6); flex-wrap: wrap; }
+    .meta-row { display: flex; flex-direction: column; }
+    .meta-row span { font-size: 12px; color: var(--fs-text-muted); }
+    .meta-row strong { font-size: 16px; }
+
+    .rx-section { margin-top: var(--fs-s-6); padding: var(--fs-s-5); }
+    .rx-section h3 { margin: 0 0 var(--fs-s-3); font-size: 17px; }
+    .rx-row { display: flex; gap: var(--fs-s-3); flex-wrap: wrap; }
+    .rx-btn {
+        display: inline-flex; align-items: center; gap: var(--fs-s-2);
+        padding: 10px 16px;
+        background: var(--fs-bg); border: 2px solid var(--fs-border);
+        border-radius: var(--fs-r-full);
+        cursor: pointer; transition: all var(--fs-trans);
+        font-family: inherit;
+    }
+    .rx-btn:hover { border-color: var(--fs-primary); transform: translateY(-2px); }
+    .rx-btn.active { background: var(--fs-primary-soft); border-color: var(--fs-primary); }
+    .rx-btn:disabled { opacity: 0.6; cursor: wait; transform: none; }
+    .rx-emoji { font-size: 22px; }
+    .rx-label { font-weight: 600; font-size: 14px; color: var(--fs-text); }
+    .rx-count {
+        background: white; color: var(--fs-primary);
+        padding: 2px 10px; border-radius: var(--fs-r-full);
+        font-size: 13px; font-weight: 800; min-width: 28px; text-align: center;
+        font-family: monospace; direction: ltr;
+    }
+    .rx-btn.active .rx-count { background: var(--fs-primary); color: white; }
+
+    .markers-section { margin-top: var(--fs-s-6); padding: var(--fs-s-5); }
+    .mk-head { display: flex; justify-content: space-between; align-items: center; gap: var(--fs-s-2); margin-bottom: var(--fs-s-3); flex-wrap: wrap; }
+    .mk-head h3 { margin: 0; font-size: 18px; }
+    .mk-label-row { display: flex; gap: var(--fs-s-2); margin-bottom: var(--fs-s-3); flex-wrap: wrap; }
+    .mk-label {
+        flex: 1; min-width: 200px; padding: var(--fs-s-2) var(--fs-s-3);
+        border: 1px solid var(--fs-border); border-radius: var(--fs-r-md);
+        font-size: 14px;
+    }
+    .mk-label:focus { outline: none; border-color: var(--fs-primary); }
+
+    .mk-list { display: flex; flex-direction: column; gap: var(--fs-s-2); }
+    .mk-item { display: flex; align-items: center; gap: var(--fs-s-3); padding: var(--fs-s-2) var(--fs-s-3); background: var(--fs-bg); border-radius: var(--fs-r-md); }
+    .mk-time {
+        background: var(--fs-primary); color: white; border: none;
+        padding: 4px 10px; border-radius: var(--fs-r-md);
+        font-family: monospace; direction: ltr; font-size: 13px;
+        cursor: pointer; transition: background var(--fs-trans);
+    }
+    .mk-time:hover { background: var(--fs-primary-dark); }
+    .mk-text { flex: 1; font-size: 14px; }
+    .mk-del { background: transparent; border: none; cursor: pointer; font-size: 14px; opacity: 0.5; transition: opacity var(--fs-trans); }
+    .mk-del:hover { opacity: 1; color: var(--fs-error); }
+
+    .attachments-section { margin-top: var(--fs-s-6); padding: var(--fs-s-5); }
+    .att-head { display: flex; justify-content: space-between; align-items: center; gap: var(--fs-s-2); margin-bottom: var(--fs-s-3); flex-wrap: wrap; }
+    .att-head h3 { margin: 0; font-size: 18px; }
+    .att-uploader { padding: var(--fs-s-3); background: var(--fs-bg); border-radius: var(--fs-r-md); margin-bottom: var(--fs-s-3); display: flex; flex-direction: column; gap: var(--fs-s-2); }
+    .att-input { width: 100%; padding: var(--fs-s-2) var(--fs-s-3); border: 1px solid var(--fs-border); border-radius: var(--fs-r-md); font-size: 14px; }
+    .att-input:focus { outline: none; border-color: var(--fs-primary); }
+    .att-progress { color: var(--fs-primary); font-size: 13px; }
+
+    .att-list { display: flex; flex-direction: column; gap: var(--fs-s-2); }
+    .att-item { display: flex; align-items: center; gap: var(--fs-s-3); padding: var(--fs-s-2) var(--fs-s-3); background: var(--fs-bg); border-radius: var(--fs-r-md); }
+    .att-icon { font-size: 28px; }
+    .att-info { flex: 1; min-width: 0; }
+    .att-info strong { display: block; font-size: 14px; }
+    .att-info small { font-size: 12px; color: var(--fs-text-muted); }
+    .att-del { background: transparent; border: none; cursor: pointer; font-size: 16px; opacity: 0.5; transition: opacity var(--fs-trans); }
+    .att-del:hover { opacity: 1; color: var(--fs-error); }
+
+    .notes-section { margin-top: var(--fs-s-6); padding: var(--fs-s-5); }
+    .notes-head { display: flex; align-items: center; justify-content: space-between; gap: var(--fs-s-2); flex-wrap: wrap; }
+    .notes-head h3 { margin: 0; font-size: 18px; }
+    .notes-status { font-size: 12px; padding: 3px 10px; border-radius: var(--fs-r-full); background: var(--fs-bg); color: var(--fs-text-muted); }
+    .notes-status.saving { background: #FEF3C7; color: #92400E; }
+    .notes-status.saved { background: #DCFCE7; color: #166534; }
+    .notes-status.error { background: #FEE2E2; color: #991B1B; }
+    .notes-hint { font-size: 13px; color: var(--fs-text-muted); margin: var(--fs-s-1) 0 var(--fs-s-3); }
+    .notes-area {
+        width: 100%; min-height: 180px; resize: vertical;
+        padding: var(--fs-s-3);
+        border: 1px solid var(--fs-border); border-radius: var(--fs-r-md);
+        font-family: inherit; font-size: 15px; line-height: 1.7;
+        background: #FFFEF7;
+        transition: border-color var(--fs-trans);
+    }
+    .notes-area:focus { outline: none; border-color: var(--fs-primary); }
+    .notes-footer { display: flex; justify-content: space-between; gap: var(--fs-s-2); margin-top: var(--fs-s-2); font-size: 12px; color: var(--fs-text-muted); }
+</style>
+
+@code {
+    [Parameter] public Guid LessonId { get; set; }
+    private FSEdu.Shared.Contracts.Courses.LessonPlaybackDto? _lesson;
+    private bool _loaded;
+
+    // Notes state
+    private string _noteBody = string.Empty;
+    private DateTime? _noteUpdatedAt;
+    private string _noteStatus = "";
+    private string _noteStatusClass = "";
+    private CancellationTokenSource? _noteDebounceCts;
+    private string? _lastSavedBody;
+
+    // Attachments state
+    private List<FSEdu.Shared.Contracts.Courses.LessonAttachmentDto>? _attachments;
+    private bool _isCourseTeacher;
+    private bool _showUpload;
+    private bool _uploading;
+    private string _uploadTitle = "";
+    private string? _uploadError;
+    private HashSet<Guid> _busyAtt = new();
+
+    // Playback speed
+    private static readonly double[] _speeds = { 0.5, 0.75, 1.0, 1.25, 1.5, 2.0 };
+    private double _currentSpeed = 1.0;
+
+    // Reactions state
+    private FSEdu.Shared.Contracts.Courses.LessonReactionsDto? _reactions;
+    private bool _rxBusy;
+
+    // Markers state
+    private List<FSEdu.Shared.Contracts.Courses.LessonMarkerDto>? _markers;
+    private bool _savingMarker;
+    private bool _showMarkerLabel;
+    private int _pendingPosition;
+    private Guid _pendingMarkerId;
+    private string _pendingLabel = "";
+
+    private int _resumeAt;
+    private DotNetObjectReference<LessonWatch>? _selfRef;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Read ?resumeAt= from URL (overrides server-stored position).
+            var uri = new Uri(Nav.Uri);
+            var qs = System.Web.HttpUtility.ParseQueryString(uri.Query);
+            int.TryParse(qs["resumeAt"], out _resumeAt);
+
+            await Auth.RestoreAsync();
+            try { _lesson = await Api.PlayLessonAsync(LessonId); } catch { }
+            _loaded = true; StateHasChanged();
+
+            // Wire up auto-tracking + resume for native <video> only.
+            if (_lesson is not null && _lesson.HasAccess
+                && !string.IsNullOrEmpty(_lesson.VideoUrl) && !IsYouTube(_lesson.VideoUrl))
+            {
+                _selfRef = DotNetObjectReference.Create(this);
+                try
+                {
+                    await JS.InvokeVoidAsync("fseduLessonProgress.attach",
+                        "lesson-player", _selfRef, _resumeAt);
+                    _currentSpeed = await JS.InvokeAsync<double>("fseduLessonProgress.getSpeed");
+                }
+                catch { }
+            }
+
+            // First-view tracking call (awards "first ever lesson" XP/badge).
+            // Subsequent ticks via OnProgressTick will keep position fresh.
+            if (_lesson is not null && _lesson.HasAccess && !string.IsNullOrEmpty(_lesson.VideoUrl))
+            {
+                _ = Task.Run(async () =>
+                {
+                    try { await Api.TrackLessonViewAsync(LessonId, _resumeAt, 1m); }
+                    catch { }
+                });
+            }
+
+            // Load existing note for students
+            if (_lesson is not null && _lesson.HasAccess && Auth.IsInRole("Student"))
+            {
+                var note = await Api.GetLessonNoteAsync(LessonId);
+                if (note is not null)
+                {
+                    _noteBody = note.Body ?? string.Empty;
+                    _noteUpdatedAt = note.UpdatedAtUtc;
+                    _lastSavedBody = _noteBody;
+                    StateHasChanged();
+                }
+            }
+
+            // Load attachments (visible to anyone with access or free-preview viewers)
+            if (_lesson is not null && (_lesson.HasAccess || _lesson.IsFreePreview))
+            {
+                _isCourseTeacher = _lesson.IsCourseTeacher;
+                _attachments = await Api.GetLessonAttachmentsAsync(LessonId);
+                StateHasChanged();
+            }
+
+            // Load markers (students only, on accessible lessons)
+            if (_lesson is not null && _lesson.HasAccess && Auth.IsInRole("Student")
+                && !string.IsNullOrEmpty(_lesson.VideoUrl) && !IsYouTube(_lesson.VideoUrl))
+            {
+                _markers = await Api.GetLessonMarkersAsync(LessonId);
+                StateHasChanged();
+            }
+
+            // Load reactions (anyone with access or free preview)
+            if (_lesson is not null && (_lesson.HasAccess || _lesson.IsFreePreview))
+            {
+                _reactions = await Api.GetLessonReactionsAsync(LessonId);
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task<int> ReadVideoCurrentTime()
+    {
+        try
+        {
+            var pos = await JS.InvokeAsync<double>("eval",
+                "(function(){var v=document.getElementById('lesson-player'); return v?Math.floor(v.currentTime||0):0;})();");
+            return (int)pos;
+        }
+        catch { return 0; }
+    }
+
+    private async Task SeekTo(int positionSec)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("eval",
+                $"(function(){{var v=document.getElementById('lesson-player'); if(!v) return; try{{v.currentTime={positionSec}; v.play();}}catch(e){{}};}})();");
+        }
+        catch { }
+    }
+
+    private async Task AddMarkerHere()
+    {
+        _savingMarker = true; StateHasChanged();
+        try
+        {
+            var pos = await ReadVideoCurrentTime();
+            var id = await Api.AddLessonMarkerAsync(LessonId, pos, null);
+            if (id is null) return;
+            _pendingPosition = pos;
+            _pendingMarkerId = id.Value;
+            _pendingLabel = "";
+            _showMarkerLabel = true;
+            _markers = await Api.GetLessonMarkersAsync(LessonId);
+        }
+        finally { _savingMarker = false; StateHasChanged(); }
+    }
+
+    private async Task SaveMarkerLabel()
+    {
+        var label = _pendingLabel.Trim();
+        if (string.IsNullOrEmpty(label)) { SkipMarkerLabel(); return; }
+        // Update by deleting + re-adding (simplest, no PATCH endpoint)
+        await Api.DeleteLessonMarkerAsync(_pendingMarkerId);
+        await Api.AddLessonMarkerAsync(LessonId, _pendingPosition, label);
+        _showMarkerLabel = false;
+        _pendingLabel = "";
+        _markers = await Api.GetLessonMarkersAsync(LessonId);
+        StateHasChanged();
+    }
+
+    private void SkipMarkerLabel()
+    {
+        _showMarkerLabel = false;
+        _pendingLabel = "";
+        StateHasChanged();
+    }
+
+    private async Task DeleteMarker(Guid markerId)
+    {
+        var ok = await Api.DeleteLessonMarkerAsync(markerId);
+        if (ok) _markers = await Api.GetLessonMarkersAsync(LessonId);
+        StateHasChanged();
+    }
+
+    private static string FormatPos(int sec)
+    {
+        if (sec <= 0) return "00:00";
+        var h = sec / 3600;
+        var m = (sec % 3600) / 60;
+        var s = sec % 60;
+        return h > 0 ? $"{h:D2}:{m:D2}:{s:D2}" : $"{m:D2}:{s:D2}";
+    }
+
+    private async Task OnFileSelected(InputFileChangeEventArgs e)
+    {
+        _uploadError = null;
+        var file = e.File;
+        if (file is null) return;
+        if (file.Size > 50L * 1024 * 1024) { _uploadError = "الحد الأقصى لحجم الملف 50 ميجابايت"; return; }
+
+        _uploading = true; StateHasChanged();
+        try
+        {
+            await using var stream = file.OpenReadStream(maxAllowedSize: 50L * 1024 * 1024);
+            var uploaded = await Api.UploadLessonAttachmentFileAsync(stream, file.Name, file.ContentType);
+            if (uploaded is null) { _uploadError = "تعذّر رفع الملف"; return; }
+
+            var title = string.IsNullOrWhiteSpace(_uploadTitle) ? file.Name : _uploadTitle.Trim();
+            var ok = await Api.AddLessonAttachmentAsync(LessonId,
+                new FSEdu.Shared.Contracts.Courses.AddLessonAttachmentRequest(
+                    title, uploaded.Url, uploaded.FileType, uploaded.SizeBytes));
+            if (!ok) { _uploadError = "تعذّر حفظ المرفق"; return; }
+
+            _uploadTitle = "";
+            _attachments = await Api.GetLessonAttachmentsAsync(LessonId);
+        }
+        catch (Exception ex) { _uploadError = "خطأ: " + ex.Message; }
+        finally { _uploading = false; StateHasChanged(); }
+    }
+
+    private async Task DeleteAttachment(Guid attId)
+    {
+        _busyAtt.Add(attId); StateHasChanged();
+        try
+        {
+            var ok = await Api.DeleteLessonAttachmentAsync(attId);
+            if (ok) _attachments = await Api.GetLessonAttachmentsAsync(LessonId);
+        }
+        finally { _busyAtt.Remove(attId); StateHasChanged(); }
+    }
+
+    private string AbsoluteUrl(string path)
+    {
+        if (string.IsNullOrEmpty(path)) return path;
+        if (path.StartsWith("http", StringComparison.OrdinalIgnoreCase)) return path;
+        var apiBase = (Config["ApiBaseUrl"] ?? "").TrimEnd('/');
+        return apiBase + path;
+    }
+
+    private static string FileIcon(string ext) => ext.ToLowerInvariant() switch
+    {
+        "pdf" => "📕",
+        "doc" or "docx" => "📘",
+        "ppt" or "pptx" => "📙",
+        "xls" or "xlsx" => "📗",
+        "zip" or "rar" or "7z" => "🗜️",
+        "mp3" => "🎵",
+        "mp4" => "🎬",
+        "jpg" or "jpeg" or "png" or "webp" => "🖼️",
+        _ => "📄"
+    };
+
+    private static string FormatSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:0.#} KB";
+        if (bytes < 1024L * 1024 * 1024) return $"{bytes / (1024.0 * 1024):0.#} MB";
+        return $"{bytes / (1024.0 * 1024 * 1024):0.#} GB";
+    }
+
+    private void OnNoteInput(ChangeEventArgs e)
+    {
+        _noteBody = e.Value?.ToString() ?? string.Empty;
+        SetNoteStatus("saving", "جارٍ الحفظ…");
+        _ = DebouncedSaveAsync();
+    }
+
+    private async Task DebouncedSaveAsync()
+    {
+        _noteDebounceCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _noteDebounceCts = cts;
+        try
+        {
+            await Task.Delay(700, cts.Token);
+            await SaveNoteAsync(cts.Token);
+        }
+        catch (TaskCanceledException) { /* superseded by a newer keystroke */ }
+    }
+
+    private async Task FlushNoteImmediate()
+    {
+        _noteDebounceCts?.Cancel();
+        await SaveNoteAsync(CancellationToken.None);
+    }
+
+    private async Task SaveNoteAsync(CancellationToken ct)
+    {
+        if (_lastSavedBody == _noteBody) return;
+        var attempt = _noteBody;
+        try
+        {
+            var ok = await Api.SaveLessonNoteAsync(LessonId, attempt, ct);
+            if (ok)
+            {
+                _lastSavedBody = attempt;
+                _noteUpdatedAt = DateTime.UtcNow;
+                SetNoteStatus("saved", "تم الحفظ ✓");
+            }
+            else
+            {
+                SetNoteStatus("error", "تعذّر الحفظ");
+            }
+        }
+        catch (TaskCanceledException) { }
+        catch
+        {
+            SetNoteStatus("error", "تعذّر الحفظ");
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void SetNoteStatus(string cls, string label)
+    {
+        _noteStatusClass = cls;
+        _noteStatus = label;
+        StateHasChanged();
+    }
+
+    private async Task ToggleReaction(string type)
+    {
+        _rxBusy = true; StateHasChanged();
+        try
+        {
+            var resp = await Api.ToggleLessonReactionAsync(LessonId, type);
+            if (resp is not null) _reactions = resp.Totals;
+        }
+        finally { _rxBusy = false; StateHasChanged(); }
+    }
+
+    // ─── Auto-tracking from JS ─────────────────────────
+    [JSInvokable]
+    public async Task OnProgressTick(int positionSec, decimal watchedPct)
+    {
+        try { await Api.TrackLessonViewAsync(LessonId, positionSec, watchedPct); }
+        catch { /* silent — tracking is best-effort */ }
+    }
+
+    private async Task SetSpeed(double rate)
+    {
+        try
+        {
+            await JS.InvokeAsync<double?>("fseduLessonProgress.setSpeed", rate);
+            _currentSpeed = rate;
+            StateHasChanged();
+        }
+        catch { }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try { await JS.InvokeVoidAsync("fseduLessonProgress.detach"); }
+        catch { }
+        _selfRef?.Dispose();
+        _selfRef = null;
+        _noteDebounceCts?.Cancel();
+    }
+
+    private static bool IsYouTube(string url) =>
+        url.Contains("youtube.com") || url.Contains("youtu.be");
+
+    private static string GetYouTubeEmbed(string url)
+    {
+        if (url.Contains("watch?v="))
+        {
+            var id = url.Split("watch?v=")[1].Split('&')[0];
+            return $"https://www.youtube.com/embed/{id}";
+        }
+        if (url.Contains("youtu.be/"))
+        {
+            var id = url.Split("youtu.be/")[1].Split('?')[0];
+            return $"https://www.youtube.com/embed/{id}";
+        }
+        return url;
+    }
+
+    private static string TypeLabel(string t) => t switch
+    {
+        "Recorded" => "درس مسجّل", "Live" => "حصة مباشرة",
+        "Document" => "مذكرة", "Quiz" => "اختبار", _ => t
+    };
+
+    private static string FormatDuration(int sec)
+    {
+        var m = sec / 60;
+        return m > 60 ? $"{m / 60}س {m % 60}د" : $"{m} دقيقة";
+    }
+}

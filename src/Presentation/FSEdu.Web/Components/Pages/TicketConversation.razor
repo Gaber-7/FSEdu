@@ -1,0 +1,239 @@
+@page "/student/tickets/{TicketId:guid}"
+@page "/staff/tickets/{TicketId:guid}"
+@page "/tickets/{TicketId:guid}"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject NavigationManager Nav
+
+<PageTitle>محادثة السؤال</PageTitle>
+
+<div class="convo-page">
+    <div class="fs-container">
+        @if (!_loaded)
+        {
+            <div class="fs-center" style="padding:60px"><span class="fs-spinner"></span></div>
+        }
+        else if (_data is null)
+        {
+            <div class="fs-alert fs-alert-error">السؤال غير موجود أو ليس لديك صلاحية</div>
+        }
+        else
+        {
+            <div class="convo-head">
+                <a href="@BackLink" class="fs-text-muted" style="font-size:14px">
+                    ← @BackLabel
+                </a>
+                <div class="head-row">
+                    <div>
+                        <h1>@_data.Title</h1>
+                        <p class="fs-text-muted">
+                            @_data.SubjectName · @StatusLabel(_data.Status) ·
+                            من @_data.StudentName
+                            @if (!string.IsNullOrEmpty(_data.AssigneeName))
+                            { <text> إلى أ/ @_data.AssigneeName</text> }
+                        </p>
+                    </div>
+                    @if (_data.Status != "Resolved" && _data.Status != "Closed")
+                    {
+                        <button class="fs-btn fs-btn-outline" @onclick="Resolve" disabled="@_resolving">
+                            @if (_resolving) { <span class="fs-spinner"></span> }
+                            ✓ تم الحل
+                        </button>
+                    }
+                    else
+                    {
+                        <span class="fs-badge fs-badge-secondary">✓ محلول</span>
+                    }
+                </div>
+            </div>
+
+            <div class="messages">
+                @foreach (var m in _data.Messages)
+                {
+                    var isMine = Auth.CurrentUser?.Id == m.SenderId;
+                    var isStaff = m.SenderRole != "Student";
+                    <div class="message @(isMine ? "mine" : "")">
+                        <div class="msg-avatar @(isStaff ? "staff" : "student")">
+                            @m.SenderName.FirstOrDefault()
+                        </div>
+                        <div class="msg-bubble">
+                            <div class="msg-head">
+                                <strong>@m.SenderName</strong>
+                                @if (isStaff) { <span class="role-tag">مدرس</span> }
+                                <small>@m.SentAtUtc.ToString("yyyy/MM/dd HH:mm")</small>
+                            </div>
+                            @if (!string.IsNullOrEmpty(m.Body))
+                            {
+                                <div class="msg-body">@m.Body</div>
+                            }
+                            @if (!string.IsNullOrEmpty(m.ImageUrl))
+                            {
+                                <a href="@(_apiBase + m.ImageUrl)" target="_blank">
+                                    <img src="@(_apiBase + m.ImageUrl)" alt="مرفق" class="msg-image" />
+                                </a>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+
+            @if (_data.Status != "Resolved" && _data.Status != "Closed")
+            {
+                <div class="reply-box fs-card">
+                    <h3>💬 اكتب ردًا</h3>
+
+                    @if (!string.IsNullOrEmpty(_replyError))
+                    {
+                        <div class="fs-alert fs-alert-error"><span>⚠️</span><span>@_replyError</span></div>
+                    }
+
+                    <div class="fs-form-group">
+                        <textarea class="fs-input" rows="4" @bind="_replyBody"
+                                  placeholder="اكتب ردك هنا..."></textarea>
+                    </div>
+
+                    <div class="reply-actions">
+                        <InputFile OnChange="OnFileSelected" accept="image/*" class="fs-file-input-sm" />
+                        @if (_uploading) { <span class="fs-spinner"></span> }
+                        @if (!string.IsNullOrEmpty(_replyImageUrl))
+                        {
+                            <span class="upload-tag">✓ صورة مرفقة</span>
+                        }
+                        <button class="fs-btn fs-btn-primary" @onclick="Reply" disabled="@_replying">
+                            @if (_replying) { <span class="fs-spinner"></span> }
+                            إرسال الرد ←
+                        </button>
+                    </div>
+                </div>
+            }
+        }
+    </div>
+</div>
+
+<style>
+    .convo-page { padding: var(--fs-s-8) 0; min-height: calc(100vh - 72px); }
+    .convo-head { margin-bottom: var(--fs-s-6); }
+    .convo-head h1 { font-size: 24px; margin: var(--fs-s-2) 0 var(--fs-s-1); }
+    .head-row { display: flex; justify-content: space-between; align-items: start; flex-wrap: wrap; gap: var(--fs-s-3); }
+
+    .messages { display: flex; flex-direction: column; gap: var(--fs-s-4); margin-bottom: var(--fs-s-6); }
+    .message { display: flex; gap: var(--fs-s-3); }
+    .message.mine { flex-direction: row-reverse; }
+
+    .msg-avatar {
+        width: 40px; height: 40px; border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        font-weight: 800; color: white; flex-shrink: 0;
+    }
+    .msg-avatar.student { background: var(--fs-primary); }
+    .msg-avatar.staff { background: var(--fs-secondary); }
+
+    .msg-bubble {
+        flex: 1; max-width: 70%;
+        background: var(--fs-surface); border: 1px solid var(--fs-border);
+        border-radius: var(--fs-r-lg); padding: var(--fs-s-4);
+    }
+    .message.mine .msg-bubble { background: var(--fs-primary-soft); border-color: var(--fs-primary-soft); }
+
+    .msg-head { display: flex; align-items: center; gap: var(--fs-s-2); margin-bottom: var(--fs-s-2); flex-wrap: wrap; }
+    .msg-head strong { font-size: 14px; }
+    .msg-head small { color: var(--fs-text-muted); font-size: 12px; }
+    .role-tag { padding: 2px 8px; background: var(--fs-secondary-soft); color: var(--fs-secondary); border-radius: var(--fs-r-full); font-size: 11px; font-weight: 700; }
+    .msg-body { font-size: 15px; line-height: 1.7; white-space: pre-wrap; }
+    .msg-image { max-width: 100%; max-height: 400px; border-radius: var(--fs-r-md); margin-top: var(--fs-s-3); display: block; }
+
+    .reply-box { padding: var(--fs-s-5); }
+    .reply-box h3 { margin: 0 0 var(--fs-s-3); font-size: 16px; }
+    .reply-actions { display: flex; align-items: center; gap: var(--fs-s-3); flex-wrap: wrap; }
+    .fs-file-input-sm { padding: 6px; border: 1px dashed var(--fs-border); border-radius: var(--fs-r-sm); font-family: var(--fs-font-body); }
+    .upload-tag { font-size: 13px; color: var(--fs-success); font-weight: 600; }
+    .reply-actions .fs-btn { margin-right: auto; }
+</style>
+
+@code {
+    [Parameter] public Guid TicketId { get; set; }
+
+    private FSEdu.Shared.Contracts.Tickets.TicketDetailDto? _data;
+    private bool _loaded;
+    private string _replyBody = "";
+    private string _replyImageUrl = "";
+    private bool _replying;
+    private bool _resolving;
+    private bool _uploading;
+    private string? _replyError;
+    private string _apiBase = "";
+
+    private string BackLink => Auth.IsInRole("Student") ? "/student/tickets" : "/staff/tickets";
+    private string BackLabel => Auth.IsInRole("Student") ? "أسئلتي" : "صندوق الوارد";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            await Load();
+        }
+    }
+
+    private async Task Load()
+    {
+        try { _data = await Api.GetTicketDetailsAsync(TicketId); }
+        catch { _data = null; }
+        _loaded = true; StateHasChanged();
+    }
+
+    private async Task OnFileSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file is null || file.Size > 5 * 1024 * 1024)
+        { _replyError = "حجم الملف كبير"; return; }
+
+        _replyError = null; _uploading = true; StateHasChanged();
+        try
+        {
+            using var stream = file.OpenReadStream(5 * 1024 * 1024);
+            var (url, err) = await Api.UploadReceiptAsync(stream, file.Name);
+            if (err is null) _replyImageUrl = url!;
+        }
+        finally { _uploading = false; StateHasChanged(); }
+    }
+
+    private async Task Reply()
+    {
+        _replyError = null;
+        if (string.IsNullOrWhiteSpace(_replyBody) || _replyBody.Length < 2)
+        { _replyError = "نص الرد مطلوب"; return; }
+
+        _replying = true;
+        try
+        {
+            var req = new FSEdu.Shared.Contracts.Tickets.ReplyToTicketRequest(
+                _replyBody.Trim(),
+                string.IsNullOrEmpty(_replyImageUrl) ? null : _replyImageUrl,
+                null);
+            var err = await Api.ReplyToTicketAsync(TicketId, req);
+            if (err is not null) { _replyError = err.Message; return; }
+            _replyBody = ""; _replyImageUrl = "";
+            await Load();
+        }
+        finally { _replying = false; }
+    }
+
+    private async Task Resolve()
+    {
+        _resolving = true;
+        try
+        {
+            var err = await Api.ResolveTicketAsync(TicketId);
+            if (err is null) await Load();
+        }
+        finally { _resolving = false; }
+    }
+
+    private static string StatusLabel(string s) => s switch
+    {
+        "Open" => "مفتوح", "Answered" => "تم الرد",
+        "Resolved" => "محلول", "Closed" => "مغلق", _ => s
+    };
+}

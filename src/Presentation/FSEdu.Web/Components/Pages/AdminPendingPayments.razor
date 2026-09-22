@@ -1,0 +1,272 @@
+@page "/admin/payments/pending"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+
+<PageTitle>مراجعة المدفوعات — Admin</PageTitle>
+
+<div class="admin-page">
+    <div class="fs-container">
+        <div class="admin-head">
+            <div>
+                <h1>💳 مراجعة طلبات الاشتراك</h1>
+                <p class="fs-text-muted">
+                    راجع إيصالات الدفع ثم اعتمد أو ارفض الاشتراك
+                </p>
+            </div>
+            <button class="fs-btn fs-btn-outline" @onclick="Load">🔄 تحديث</button>
+        </div>
+
+        @if (!_loaded)
+        {
+            <div class="fs-center" style="padding:60px"><span class="fs-spinner"></span></div>
+        }
+        else if (!Auth.IsAuthenticated || !Auth.IsInRole("Admin"))
+        {
+            <div class="fs-alert fs-alert-error">للمشرفين الإداريين فقط. <a href="/login">تسجيل الدخول</a></div>
+        }
+        else if (!string.IsNullOrEmpty(_message))
+        {
+            <div class="fs-alert @(_isError ? "fs-alert-error" : "fs-alert-success")">
+                <span>@(_isError ? "⚠️" : "✓")</span>
+                <span>@_message</span>
+            </div>
+        }
+
+        @if (_loaded && (_payments is null || !_payments.Any()))
+        {
+            <div class="fs-card fs-center empty">
+                <div style="font-size:64px">✅</div>
+                <h3>لا توجد مدفوعات بانتظار المراجعة</h3>
+                <p class="fs-text-muted">كل طلبات الاشتراك تمت مراجعتها</p>
+            </div>
+        }
+        else if (_payments is not null)
+        {
+            <div class="fs-grid fs-grid-2">
+                @foreach (var p in _payments)
+                {
+                    <div class="payment-card fs-card">
+                        <div class="user-row">
+                            <div class="avatar">@p.UserName.FirstOrDefault()</div>
+                            <div>
+                                <strong>@p.UserName</strong>
+                                <small>@p.UserPhone</small>
+                            </div>
+                            <span class="fs-badge">@MethodLabel(p.PaymentMethod)</span>
+                        </div>
+
+                        <div class="sub-info">
+                            <div class="info-row">
+                                <span>نوع الاشتراك</span>
+                                <strong>@TypeLabel(p.SubscriptionType)</strong>
+                            </div>
+                            @if (!string.IsNullOrEmpty(p.SubjectName))
+                            {
+                                <div class="info-row"><span>المادة</span><strong>@p.SubjectName</strong></div>
+                            }
+                            @if (!string.IsNullOrEmpty(p.StageName))
+                            {
+                                <div class="info-row"><span>المرحلة</span><strong>@p.StageName</strong></div>
+                            }
+                            @if (!string.IsNullOrEmpty(p.Term))
+                            {
+                                <div class="info-row"><span>الترم</span><strong>@TermLabel(p.Term)</strong></div>
+                            }
+                            <div class="info-row highlight">
+                                <span>المبلغ</span>
+                                <strong>@p.Amount @p.Currency</strong>
+                            </div>
+                        </div>
+
+                        <div class="pay-info">
+                            <div class="info-row">
+                                <span>رقم العملية</span>
+                                <strong class="mono">@p.ReferenceNumber</strong>
+                            </div>
+                            @if (!string.IsNullOrEmpty(p.SenderName))
+                            {
+                                <div class="info-row"><span>اسم المُرسِل</span><strong>@p.SenderName</strong></div>
+                            }
+                            @if (p.SubmittedAtUtc.HasValue)
+                            {
+                                <div class="info-row">
+                                    <span>أُرسل في</span>
+                                    <strong>@p.SubmittedAtUtc.Value.ToString("yyyy/MM/dd HH:mm")</strong>
+                                </div>
+                            }
+                            @if (!string.IsNullOrEmpty(p.Notes))
+                            {
+                                <div class="notes">📝 @p.Notes</div>
+                            }
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(p.ReceiptImageUrl))
+                        {
+                            <a href="@(_apiBase + p.ReceiptImageUrl)" target="_blank" class="receipt-link">
+                                🖼️ معاينة إيصال الدفع
+                            </a>
+                        }
+                        else
+                        {
+                            <div class="no-receipt">⚠️ لم يتم رفع إيصال</div>
+                        }
+
+                        <div class="card-actions">
+                            <button class="fs-btn fs-btn-primary" @onclick="() => Approve(p.PaymentId)"
+                                    disabled="@(_busy == p.PaymentId)">
+                                @if (_busy == p.PaymentId) { <span class="fs-spinner"></span> }
+                                ✓ اعتماد وتفعيل الاشتراك
+                            </button>
+                            <button class="fs-btn fs-btn-outline danger-btn" @onclick="() => OpenRejectModal(p.PaymentId)"
+                                    disabled="@(_busy == p.PaymentId)">
+                                ✕ رفض
+                            </button>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+
+        @if (_rejectPaymentId is not null)
+        {
+            <div class="modal-backdrop" @onclick="() => _rejectPaymentId = null">
+                <div class="modal fs-card fs-card-elevated" @onclick:stopPropagation="true">
+                    <h3>سبب الرفض</h3>
+                    <p class="fs-text-muted">سيتم إبلاغ الطالب بهذا السبب</p>
+                    <div class="fs-form-group">
+                        <textarea class="fs-input" rows="3" @bind="_rejectReason"
+                                  placeholder="مثال: لم يتم العثور على التحويل، أو المبلغ أقل من المطلوب..."></textarea>
+                    </div>
+                    <div class="modal-actions">
+                        <button class="fs-btn fs-btn-outline" @onclick="() => _rejectPaymentId = null">إلغاء</button>
+                        <button class="fs-btn fs-btn-primary danger-btn" @onclick="ConfirmReject"
+                                disabled="@(_busy == _rejectPaymentId)">
+                            تأكيد الرفض
+                        </button>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .admin-page { padding: var(--fs-s-10) 0; min-height: calc(100vh - 72px); }
+    .admin-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--fs-s-6); flex-wrap: wrap; gap: var(--fs-s-3); }
+    .empty { padding: 80px; text-align: center; }
+
+    .payment-card { display: flex; flex-direction: column; gap: var(--fs-s-3); }
+
+    .user-row { display: flex; align-items: center; gap: var(--fs-s-3); }
+    .avatar { width: 48px; height: 48px; border-radius: 50%; background: linear-gradient(135deg, var(--fs-primary), var(--fs-secondary)); color: white; font-weight: 800; font-size: 20px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .user-row strong { display: block; font-size: 15px; }
+    .user-row small { font-size: 12px; color: var(--fs-text-muted); direction: ltr; }
+
+    .sub-info, .pay-info { background: var(--fs-bg); padding: var(--fs-s-3); border-radius: var(--fs-r-md); }
+    .info-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 13px; }
+    .info-row span { color: var(--fs-text-muted); }
+    .info-row.highlight { padding-top: var(--fs-s-2); margin-top: var(--fs-s-2); border-top: 1px dashed var(--fs-border); font-size: 15px; }
+    .info-row.highlight strong { color: var(--fs-primary); font-size: 16px; }
+    .mono { font-family: monospace; direction: ltr; }
+    .notes { margin-top: var(--fs-s-2); font-size: 13px; color: var(--fs-text-muted); font-style: italic; }
+
+    .receipt-link {
+        display: block; padding: var(--fs-s-3);
+        background: var(--fs-primary-soft); color: var(--fs-primary);
+        border-radius: var(--fs-r-md);
+        text-align: center; font-weight: 600; text-decoration: none;
+    }
+    .receipt-link:hover { background: var(--fs-primary); color: white; }
+    .no-receipt { padding: var(--fs-s-3); background: #FEE2E2; color: var(--fs-danger); border-radius: var(--fs-r-md); text-align: center; font-size: 13px; }
+
+    .card-actions { display: flex; gap: var(--fs-s-2); padding-top: var(--fs-s-2); border-top: 1px solid var(--fs-border); }
+    .card-actions .fs-btn { flex: 1; }
+    .danger-btn { color: var(--fs-danger); border-color: var(--fs-danger); }
+    .danger-btn:hover { background: var(--fs-danger); color: white !important; }
+
+    .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; padding: var(--fs-s-4); z-index: 100; backdrop-filter: blur(4px); }
+    .modal { max-width: 520px; width: 100%; }
+    .modal-actions { display: flex; gap: var(--fs-s-2); justify-content: flex-end; margin-top: var(--fs-s-4); }
+</style>
+
+@code {
+    private List<FSEdu.Shared.Contracts.Payments.PendingPaymentDto>? _payments;
+    private bool _loaded;
+    private Guid? _busy;
+    private Guid? _rejectPaymentId;
+    private string _rejectReason = "";
+    private string? _message;
+    private bool _isError;
+    private string _apiBase = "";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            await Load();
+        }
+    }
+
+    private async Task Load()
+    {
+        if (!Auth.IsAuthenticated || !Auth.IsInRole("Admin")) { _loaded = true; StateHasChanged(); return; }
+        try { _payments = await Api.GetPendingPaymentsAsync(); }
+        catch { _payments = new(); }
+        _loaded = true; StateHasChanged();
+    }
+
+    private async Task Approve(Guid id)
+    {
+        _busy = id; StateHasChanged();
+        try
+        {
+            var err = await Api.ApprovePaymentAsync(id, null);
+            if (err is null) { ShowSuccess("تم اعتماد الاشتراك وتفعيله"); await Load(); }
+            else { ShowError(err.Message); }
+        }
+        finally { _busy = null; }
+    }
+
+    private void OpenRejectModal(Guid id)
+    {
+        _rejectPaymentId = id;
+        _rejectReason = "";
+    }
+
+    private async Task ConfirmReject()
+    {
+        if (_rejectPaymentId is null || string.IsNullOrWhiteSpace(_rejectReason)) return;
+        _busy = _rejectPaymentId.Value; StateHasChanged();
+        try
+        {
+            var err = await Api.RejectPaymentAsync(_rejectPaymentId.Value, _rejectReason.Trim());
+            if (err is null) { ShowSuccess("تم رفض الاشتراك"); _rejectPaymentId = null; await Load(); }
+            else { ShowError(err.Message); }
+        }
+        finally { _busy = null; }
+    }
+
+    private void ShowSuccess(string msg) { _message = msg; _isError = false; StateHasChanged(); }
+    private void ShowError(string msg) { _message = msg; _isError = true; StateHasChanged(); }
+
+    private static string MethodLabel(string? m) => m switch
+    {
+        "InstaPay" => "InstaPay", "VodafoneCash" => "فودافون كاش",
+        "BankTransfer" => "تحويل بنكي", _ => m ?? "—"
+    };
+
+    private static string TypeLabel(string t) => t switch
+    {
+        "SubjectMonthly" => "مادة / شهر",
+        "SubjectTerm" => "مادة / ترم",
+        "StageFullTerm" => "جميع المواد / ترم",
+        _ => t
+    };
+
+    private static string TermLabel(string? t) => t switch
+    {
+        "First" => "الترم الأول", "Second" => "الترم الثاني", "Annual" => "سنوي", _ => t ?? ""
+    };
+}

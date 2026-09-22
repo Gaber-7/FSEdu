@@ -1,0 +1,128 @@
+@page "/student/bookmarks"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject NavigationManager Nav
+
+<PageTitle>المحفوظات</PageTitle>
+
+<div class="bk-page">
+    <div class="fs-container">
+        <header class="bk-head">
+            <h1>🔖 محفوظاتي</h1>
+            <p class="fs-text-muted">الدورات التي حفظتها للرجوع إليها لاحقًا.</p>
+        </header>
+
+        @if (!_loaded)
+        {
+            <div class="fs-center" style="padding:80px"><span class="fs-spinner"></span></div>
+        }
+        else if (_items.Count == 0)
+        {
+            <div class="fs-card empty">
+                <div style="font-size:64px">🗂️</div>
+                <h3>لا توجد محفوظات بعد</h3>
+                <p class="fs-text-muted">تصفّح الدورات واضغط زر الحفظ لإضافة الدورات هنا.</p>
+                <a href="/courses" class="fs-btn fs-btn-primary">تصفّح الدورات</a>
+            </div>
+        }
+        else
+        {
+            <div class="bk-grid">
+                @foreach (var c in _items)
+                {
+                    <div class="bk-card fs-card">
+                        <div class="bk-thumb" @onclick="() => GoToCourse(c.CourseId)">
+                            @if (!string.IsNullOrEmpty(c.ThumbnailUrl))
+                            {
+                                <img src="@c.ThumbnailUrl" alt="@c.Title" />
+                            }
+                            else
+                            {
+                                <span>📖</span>
+                            }
+                        </div>
+                        <div class="bk-body">
+                            <h3 @onclick="() => GoToCourse(c.CourseId)">@c.Title</h3>
+                            <small class="fs-text-muted">@c.SubjectName · @c.StageName</small>
+                            <small class="fs-text-muted">أ/ @c.TeacherName</small>
+                            <div class="bk-meta">
+                                <span>@c.LessonsCount درس</span>
+                                @if (c.RatingAvg > 0) { <span>⭐ @c.RatingAvg.ToString("0.0")</span> }
+                            </div>
+                            <div class="bk-actions">
+                                <a href="/courses/@c.CourseId" class="fs-btn fs-btn-primary fs-btn-sm">افتح الدورة</a>
+                                <button class="fs-btn fs-btn-outline fs-btn-sm" @onclick="() => Remove(c.CourseId)" disabled="@_busy">
+                                    🗑 إزالة
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .bk-page { padding: var(--fs-s-8) 0; min-height: calc(100vh - 72px); }
+    .bk-head { margin-bottom: var(--fs-s-5); }
+    .bk-head h1 { margin: 0 0 var(--fs-s-1); font-size: 26px; }
+
+    .empty { padding: 60px var(--fs-s-5); text-align: center; }
+    .empty h3 { margin: var(--fs-s-3) 0 var(--fs-s-2); }
+
+    .bk-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: var(--fs-s-4); }
+    .bk-card { padding: 0; overflow: hidden; transition: transform 0.15s, box-shadow 0.15s; }
+    .bk-card:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0,0,0,0.10); }
+    .bk-thumb {
+        height: 130px; background: linear-gradient(135deg, var(--fs-primary), var(--fs-secondary));
+        display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 48px; color: white;
+    }
+    .bk-thumb img { width: 100%; height: 100%; object-fit: cover; }
+    .bk-body { padding: var(--fs-s-3); display: flex; flex-direction: column; gap: 4px; }
+    .bk-body h3 { margin: 0; font-size: 16px; cursor: pointer; }
+    .bk-body h3:hover { color: var(--fs-primary); }
+    .bk-meta { display: flex; gap: var(--fs-s-3); font-size: 12px; color: var(--fs-text-muted); margin-top: var(--fs-s-1); flex-wrap: wrap; }
+    .bk-actions { display: flex; gap: var(--fs-s-2); margin-top: var(--fs-s-2); }
+</style>
+
+@code {
+    private List<FSEdu.Shared.Contracts.Courses.BookmarkedCourseDto> _items = new();
+    private bool _loaded;
+    private bool _busy;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            if (Auth.CurrentUser is null)
+            {
+                Nav.NavigateTo("/login");
+                return;
+            }
+            await Load();
+        }
+    }
+
+    private async Task Load()
+    {
+        _items = await Api.GetMyBookmarksAsync();
+        _loaded = true;
+        StateHasChanged();
+    }
+
+    private void GoToCourse(Guid courseId) => Nav.NavigateTo($"/courses/{courseId}");
+
+    private async Task Remove(Guid courseId)
+    {
+        _busy = true; StateHasChanged();
+        try
+        {
+            await Api.ToggleCourseBookmarkAsync(courseId);
+            _items.RemoveAll(c => c.CourseId == courseId);
+        }
+        finally { _busy = false; StateHasChanged(); }
+    }
+}

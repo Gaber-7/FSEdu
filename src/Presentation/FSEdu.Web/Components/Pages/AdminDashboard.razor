@@ -1,0 +1,254 @@
+@page "/admin/dashboard"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+
+<PageTitle>لوحة الإدارة</PageTitle>
+
+<div class="page">
+    <div class="fs-container">
+        <div class="page-head">
+            <div>
+                <h1>⚙️ لوحة الإدارة</h1>
+                <p class="fs-text-muted">نظرة شاملة على المنصة في لمحة</p>
+            </div>
+            <button class="fs-btn fs-btn-outline" @onclick="Load">🔄 تحديث</button>
+        </div>
+
+        @if (!_loaded)
+        {
+            <div class="fs-center" style="padding:60px"><span class="fs-spinner"></span></div>
+        }
+        else if (!Auth.IsAuthenticated || !Auth.IsInRole("Admin"))
+        {
+            <div class="fs-alert fs-alert-error">للأدمن فقط. <a href="/login">دخول</a></div>
+        }
+        else if (_data is null)
+        {
+            <div class="fs-alert fs-alert-error">تعذّر تحميل الإحصائيات.</div>
+        }
+        else
+        {
+            <!-- Top KPI strip -->
+            <div class="kpi-strip">
+                <div class="kpi-card primary">
+                    <div class="kpi-label">المستخدمون</div>
+                    <div class="kpi-value">@(_data.Users.TotalStudents + _data.Users.TotalParents + _data.Users.TotalTeachersVerified)</div>
+                    <div class="kpi-sub">+@_data.Users.NewSignupsThisWeek هذا الأسبوع</div>
+                </div>
+                <div class="kpi-card success">
+                    <div class="kpi-label">الإيرادات الكلية</div>
+                    <div class="kpi-value">@_data.Subscriptions.TotalRevenueEgp.ToString("N0") ج.م</div>
+                    <div class="kpi-sub">@_data.Subscriptions.RevenueThisMonthEgp.ToString("N0") ج.م هذا الشهر</div>
+                </div>
+                <div class="kpi-card info">
+                    <div class="kpi-label">اشتراكات نشطة</div>
+                    <div class="kpi-value">@_data.Subscriptions.ActiveCount</div>
+                    <div class="kpi-sub">@_data.Subscriptions.ExpiringIn7Days ينتهون قريبًا</div>
+                </div>
+                <div class="kpi-card warn">
+                    <div class="kpi-label">في انتظارك</div>
+                    <div class="kpi-value">@(_data.Payments.AwaitingReview + _data.Users.TotalTeachersPending + _data.Content.PendingCoursesForReview)</div>
+                    <div class="kpi-sub">دفعات + مدرسون + دورات</div>
+                </div>
+            </div>
+
+            <!-- Two-column main -->
+            <div class="dash-grid">
+                <!-- Left: domain sections -->
+                <div class="dash-col">
+                    <div class="section fs-card">
+                        <h3>👥 المستخدمون</h3>
+                        <div class="kv-list">
+                            <div><span>طلاب</span><strong>@_data.Users.TotalStudents</strong></div>
+                            <div><span>أولياء أمور</span><strong>@_data.Users.TotalParents</strong></div>
+                            <div><span>مدرسون معتمدون</span><strong>@_data.Users.TotalTeachersVerified</strong></div>
+                            <div class="alert">
+                                <span>مدرسون بانتظار الاعتماد</span>
+                                <a href="/admin/teachers/pending"><strong>@_data.Users.TotalTeachersPending</strong> →</a>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="section fs-card">
+                        <h3>💳 الاشتراكات والمدفوعات</h3>
+                        <div class="kv-list">
+                            <div><span>نشطة</span><strong>@_data.Subscriptions.ActiveCount</strong></div>
+                            <div><span>تنتهي خلال 7 أيام</span><strong>@_data.Subscriptions.ExpiringIn7Days</strong></div>
+                            <div><span>منتهية</span><strong>@_data.Subscriptions.ExpiredCount</strong></div>
+                            <div><span>بانتظار الدفع</span><strong>@_data.Subscriptions.PendingPaymentCount</strong></div>
+                            <div class="alert">
+                                <span>دفعات بانتظار المراجعة (@_data.Payments.AwaitingAmountEgp.ToString("N0") ج.م)</span>
+                                <a href="/admin/payments/pending"><strong>@_data.Payments.AwaitingReview</strong> →</a>
+                            </div>
+                            <div><span>دفعات مُعتمدة هذا الأسبوع</span><strong>@_data.Payments.ApprovedThisWeek</strong></div>
+                            <div><span>دفعات مرفوضة هذا الأسبوع</span><strong>@_data.Payments.RejectedThisWeek</strong></div>
+                        </div>
+                    </div>
+
+                    <div class="section fs-card">
+                        <h3>📚 المحتوى</h3>
+                        <div class="kv-list">
+                            <div><span>دورات منشورة</span><strong>@_data.Content.PublishedCourses</strong></div>
+                            <div class="alert">
+                                <span>دورات بانتظار المراجعة</span>
+                                <a href="/admin/courses/pending"><strong>@_data.Content.PendingCoursesForReview</strong> →</a>
+                            </div>
+                            <div><span>إجمالي الدروس</span><strong>@_data.Content.TotalLessons</strong></div>
+                            <div><span>إجمالي الاختبارات</span><strong>@_data.Content.TotalAssessments</strong></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right: live + tickets + activity -->
+                <div class="dash-col">
+                    <div class="section fs-card">
+                        <h3>🎥 البث المباشر</h3>
+                        <div class="kv-list">
+                            <div class="@(_data.LiveSessions.LiveNow > 0 ? "alert" : "")">
+                                <span>مباشر الآن</span>
+                                <strong style="color:@(_data.LiveSessions.LiveNow > 0 ? "var(--fs-danger)" : "inherit")">@_data.LiveSessions.LiveNow</strong>
+                            </div>
+                            <div><span>مجدولة قادمة</span><strong>@_data.LiveSessions.ScheduledUpcoming</strong></div>
+                            <div><span>انتهت هذا الأسبوع</span><strong>@_data.LiveSessions.EndedThisWeek</strong></div>
+                            <div><span>تسجيلات متاحة</span><strong>@_data.LiveSessions.RecordingsAvailable</strong></div>
+                        </div>
+                    </div>
+
+                    <div class="section fs-card">
+                        <h3>💬 التذاكر</h3>
+                        <div class="kv-list">
+                            <div class="@(_data.Tickets.OldestOpenDays > 3 ? "alert" : "")">
+                                <span>مفتوحة @(_data.Tickets.OldestOpenDays > 0 ? $"(الأقدم: {_data.Tickets.OldestOpenDays} يوم)" : "")</span>
+                                <strong>@_data.Tickets.OpenCount</strong>
+                            </div>
+                            <div><span>مُحلولة هذا الأسبوع</span><strong>@_data.Tickets.ResolvedThisWeek</strong></div>
+                        </div>
+                    </div>
+
+                    <div class="section fs-card">
+                        <h3>📰 آخر النشاطات</h3>
+                        @if (_data.RecentActivity.Count == 0)
+                        {
+                            <p class="fs-text-muted">لا يوجد نشاط حديث.</p>
+                        }
+                        else
+                        {
+                            <div class="activity-list">
+                                @foreach (var a in _data.RecentActivity)
+                                {
+                                    <div class="activity-item">
+                                        <span class="activity-icon">@IconFor(a.Type)</span>
+                                        <div class="activity-body">
+                                            <div class="activity-title">
+                                                @if (!string.IsNullOrEmpty(a.Url))
+                                                { <a href="@a.Url">@a.Title</a> }
+                                                else { @a.Title }
+                                            </div>
+                                            <small class="fs-text-muted">@a.Subtitle · @FormatRelative(a.AtUtc)</small>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .page { padding: var(--fs-s-10) 0; min-height: calc(100vh - 72px); }
+    .page-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--fs-s-6); flex-wrap: wrap; gap: var(--fs-s-3); }
+
+    .kpi-strip {
+        display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: var(--fs-s-3); margin-bottom: var(--fs-s-5);
+    }
+    .kpi-card {
+        padding: var(--fs-s-4); border-radius: var(--fs-r-md);
+        color: white;
+    }
+    .kpi-card.primary { background: linear-gradient(135deg, #5B4FE5, #8B7FE8); }
+    .kpi-card.success { background: linear-gradient(135deg, #10B981, #34D399); }
+    .kpi-card.info    { background: linear-gradient(135deg, #0EA5E9, #38BDF8); }
+    .kpi-card.warn    { background: linear-gradient(135deg, #F59E0B, #FBBF24); }
+    .kpi-label { font-size: 13px; opacity: 0.85; margin-bottom: 4px; }
+    .kpi-value { font-size: 28px; font-weight: 800; line-height: 1; }
+    .kpi-sub { font-size: 12px; opacity: 0.85; margin-top: 6px; }
+
+    .dash-grid {
+        display: grid; grid-template-columns: 1fr 1fr; gap: var(--fs-s-3);
+    }
+    @@media (max-width: 900px) { .dash-grid { grid-template-columns: 1fr; } }
+    .dash-col { display: flex; flex-direction: column; gap: var(--fs-s-3); }
+
+    .section { padding: var(--fs-s-4); }
+    .section h3 { margin: 0 0 var(--fs-s-3); font-size: 17px; }
+    .kv-list { display: flex; flex-direction: column; gap: 8px; }
+    .kv-list > div {
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 6px 10px; border-radius: var(--fs-r-md); background: var(--fs-bg);
+        font-size: 14px;
+    }
+    .kv-list > div span { color: var(--fs-text-muted); }
+    .kv-list > div strong { font-size: 15px; }
+    .kv-list > div.alert {
+        background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.4);
+    }
+    .kv-list > div.alert a { color: var(--fs-primary); text-decoration: none; }
+    .kv-list > div.alert a:hover { text-decoration: underline; }
+
+    .activity-list { display: flex; flex-direction: column; gap: 8px; max-height: 420px; overflow-y: auto; }
+    .activity-item { display: flex; gap: var(--fs-s-2); padding: 8px; border-radius: var(--fs-r-md); background: var(--fs-bg); }
+    .activity-icon { font-size: 18px; flex-shrink: 0; }
+    .activity-body { min-width: 0; flex: 1; }
+    .activity-title { font-size: 13px; font-weight: 600; }
+    .activity-title a { color: var(--fs-primary); text-decoration: none; }
+    .activity-title a:hover { text-decoration: underline; }
+</style>
+
+@code {
+    private FSEdu.Shared.Contracts.Admin.AdminOverviewDto? _data;
+    private bool _loaded;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            await Load();
+        }
+    }
+
+    private async Task Load()
+    {
+        if (!Auth.IsAuthenticated || !Auth.IsInRole("Admin"))
+        { _loaded = true; StateHasChanged(); return; }
+        try { _data = await Api.GetAdminOverviewAsync(); }
+        catch { _data = null; }
+        _loaded = true;
+        StateHasChanged();
+    }
+
+    private static string IconFor(string type) => type switch
+    {
+        "payment" => "💳",
+        "subscription" => "🎫",
+        "ticket" => "💬",
+        "live" => "🎥",
+        "user" => "👤",
+        _ => "📰"
+    };
+
+    private static string FormatRelative(DateTime utc)
+    {
+        var diff = DateTime.UtcNow - utc;
+        if (diff.TotalSeconds < 60) return "الآن";
+        if (diff.TotalMinutes < 60) return $"منذ {(int)diff.TotalMinutes} دقيقة";
+        if (diff.TotalHours < 24) return $"منذ {(int)diff.TotalHours} ساعة";
+        if (diff.TotalDays < 30) return $"منذ {(int)diff.TotalDays} يوم";
+        return utc.ToLocalTime().ToString("yyyy/MM/dd");
+    }
+}

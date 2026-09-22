@@ -1,0 +1,229 @@
+@page "/teacher/homework"
+@using FSEdu.Shared.Contracts.Courses
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject NavigationManager Nav
+@rendermode InteractiveServer
+
+<PageTitle>الواجبات - FSEdu</PageTitle>
+
+<div class="hw-page fs-container">
+    <div class="page-head-row">
+        <div>
+            <h1>📋 الواجبات</h1>
+            <p class="fs-text-muted">إنشاء واجبات لدوراتك ومتابعة تسليم الطلاب وتصحيحها</p>
+        </div>
+        <button class="fs-btn fs-btn-primary" @onclick="() => _showCreate = true">+ واجب جديد</button>
+    </div>
+
+    @if (_showCreate)
+    {
+        <div class="modal-back" @onclick="() => _showCreate = false">
+            <div class="modal" @onclick:stopPropagation="true">
+                <h3>إنشاء واجب جديد</h3>
+                <label>الدورة</label>
+                <select class="fs-input" @bind="_newCourseId">
+                    <option value="">— اختر دورة —</option>
+                    @foreach (var c in _myCourses)
+                    {
+                        <option value="@c.Id">@c.Title</option>
+                    }
+                </select>
+
+                <label>عنوان الواجب</label>
+                <input class="fs-input" @bind="_newTitle" maxlength="255" />
+
+                <label>الوصف / التعليمات</label>
+                <textarea class="fs-input" rows="4" @bind="_newDesc"></textarea>
+
+                <label>رابط مرفق (اختيارى)</label>
+                <input class="fs-input" placeholder="https://..." @bind="_newAttach" />
+
+                <div class="row-2">
+                    <div>
+                        <label>آخر موعد للتسليم</label>
+                        <input type="datetime-local" class="fs-input" @bind="_newDueLocal" />
+                    </div>
+                    <div>
+                        <label>الدرجة الكاملة</label>
+                        <input type="number" class="fs-input" min="1" step="1" @bind="_newMaxScore" />
+                    </div>
+                </div>
+
+                <label class="check-row">
+                    <input type="checkbox" @bind="_newPublish" />
+                    <span>نشر فورًا للطلاب (إرسال إشعار)</span>
+                </label>
+
+                @if (!string.IsNullOrEmpty(_createError))
+                {
+                    <div class="fs-alert fs-alert-danger">@_createError</div>
+                }
+
+                <div class="modal-actions">
+                    <button class="fs-btn fs-btn-primary" @onclick="CreateHomework" disabled="@_creating">
+                        @if (_creating) { <span class="fs-spinner"></span> }
+                        else { <text>إنشاء</text> }
+                    </button>
+                    <button class="fs-btn fs-btn-ghost" @onclick="() => _showCreate = false">إلغاء</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (!_loaded)
+    {
+        <div class="fs-loading"><span class="fs-spinner"></span></div>
+    }
+    else if (_rows.Count == 0)
+    {
+        <div class="empty">
+            <div class="empty-icon">📋</div>
+            <h3>لا توجد واجبات بعد</h3>
+            <p>أنشئ أول واجب لطلابك من زرّ "واجب جديد".</p>
+        </div>
+    }
+    else
+    {
+        <div class="hw-list">
+            @foreach (var h in _rows)
+            {
+                <div class="hw-row">
+                    <div class="hw-main">
+                        <a href="@($"/teacher/homework/{h.Id}")" class="hw-title">@h.Title</a>
+                        <small class="fs-text-muted">@h.CourseTitle · آخر موعد: @h.DueDateUtc.ToLocalTime().ToString("yyyy/MM/dd HH:mm")</small>
+                    </div>
+                    <div class="hw-stats">
+                        <div class="stat">
+                            <strong>@h.SubmittedCount / @h.TotalEnrolled</strong>
+                            <span>سلّم</span>
+                        </div>
+                        <div class="stat">
+                            <strong>@h.GradedCount</strong>
+                            <span>مُصحّح</span>
+                        </div>
+                    </div>
+                    <div class="hw-actions">
+                        @if (h.Published)
+                        {
+                            <span class="pub-badge on">منشور</span>
+                        }
+                        else
+                        {
+                            <span class="pub-badge off">مسودّة</span>
+                        }
+                        <button class="fs-btn fs-btn-sm fs-btn-ghost" @onclick="() => TogglePublish(h.Id, !h.Published)">
+                            @(h.Published ? "إلغاء النشر" : "نشر")
+                        </button>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<style>
+    .hw-page { min-height: calc(100vh - 72px); padding: var(--fs-s-8) 0; }
+    .page-head-row { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--fs-s-4); margin-bottom: var(--fs-s-5); flex-wrap: wrap; }
+    .page-head-row h1 { margin: 0 0 var(--fs-s-2); }
+
+    .empty { text-align: center; padding: var(--fs-s-12); background: white; border-radius: var(--fs-r-xl); border: 1px solid var(--fs-border); }
+    .empty-icon { font-size: 64px; }
+
+    .hw-list { display: flex; flex-direction: column; gap: var(--fs-s-3); }
+    .hw-row {
+        display: grid; grid-template-columns: 1fr auto auto;
+        gap: var(--fs-s-4); align-items: center;
+        background: white; border: 1px solid var(--fs-border);
+        border-radius: var(--fs-r-lg); padding: var(--fs-s-4);
+    }
+    @@media (max-width: 700px) { .hw-row { grid-template-columns: 1fr; } }
+    .hw-title { font-weight: 700; font-size: 16px; color: var(--fs-text); text-decoration: none; display: block; margin-bottom: 4px; }
+    .hw-title:hover { color: var(--fs-primary); }
+    .hw-stats { display: flex; gap: var(--fs-s-4); }
+    .hw-stats .stat { display: flex; flex-direction: column; align-items: center; }
+    .hw-stats strong { font-size: 16px; color: var(--fs-primary); }
+    .hw-stats span { font-size: 11px; color: var(--fs-text-muted); }
+    .hw-actions { display: flex; align-items: center; gap: var(--fs-s-2); flex-wrap: wrap; }
+    .pub-badge { padding: 3px 10px; border-radius: var(--fs-r-full); font-size: 11px; font-weight: 700; }
+    .pub-badge.on { background: #DCFCE7; color: #15803D; }
+    .pub-badge.off { background: #FEF3C7; color: #92400E; }
+
+    .modal-back {
+        position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+        display: flex; align-items: center; justify-content: center;
+        z-index: 1000; padding: var(--fs-s-4);
+    }
+    .modal {
+        background: white; border-radius: var(--fs-r-xl);
+        padding: var(--fs-s-5); width: 100%; max-width: 540px;
+        max-height: 90vh; overflow-y: auto;
+        display: flex; flex-direction: column; gap: var(--fs-s-3);
+    }
+    .modal h3 { margin: 0 0 var(--fs-s-3); }
+    .modal label { font-size: 13px; font-weight: 600; margin-top: 4px; }
+    .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--fs-s-3); }
+    .row-2 > div { display: flex; flex-direction: column; }
+    .check-row { display: flex; align-items: center; gap: 8px; flex-direction: row !important; }
+    .modal-actions { display: flex; gap: var(--fs-s-3); margin-top: var(--fs-s-3); }
+</style>
+
+@code {
+    private List<TeacherHomeworkRowDto> _rows = new();
+    private List<FSEdu.Shared.Contracts.Courses.CourseListItemDto> _myCourses = new();
+    private bool _loaded;
+
+    // Create form
+    private bool _showCreate;
+    private bool _creating;
+    private string? _createError;
+    private string _newCourseId = "";
+    private string _newTitle = "";
+    private string _newDesc = "";
+    private string _newAttach = "";
+    private DateTime _newDueLocal = DateTime.Now.AddDays(3).Date.AddHours(20);
+    private decimal _newMaxScore = 10;
+    private bool _newPublish = true;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        await Auth.RestoreAsync();
+        if (!Auth.IsInRole("Teacher")) { Nav.NavigateTo("/login"); return; }
+        _rows = await Api.ListTeacherHomeworkAsync();
+        try { _myCourses = await Api.GetMyTeacherCoursesAsync(); } catch { }
+        _loaded = true; StateHasChanged();
+    }
+
+    private async Task CreateHomework()
+    {
+        _createError = null;
+        if (!Guid.TryParse(_newCourseId, out var courseId))
+        { _createError = "اختر دورة"; return; }
+        if (string.IsNullOrWhiteSpace(_newTitle)) { _createError = "اكتب عنوان الواجب"; return; }
+        if (_newMaxScore <= 0) { _createError = "الدرجة يجب أن تكون أكبر من صفر"; return; }
+
+        _creating = true; StateHasChanged();
+        try
+        {
+            var dueUtc = DateTime.SpecifyKind(_newDueLocal, DateTimeKind.Local).ToUniversalTime();
+            var req = new CreateHomeworkRequest(courseId, _newTitle.Trim(),
+                string.IsNullOrWhiteSpace(_newDesc) ? null : _newDesc.Trim(),
+                string.IsNullOrWhiteSpace(_newAttach) ? null : _newAttach.Trim(),
+                dueUtc, _newMaxScore, _newPublish);
+            var (id, err) = await Api.CreateHomeworkAsync(req);
+            if (err is not null) { _createError = err.Message; return; }
+            _showCreate = false;
+            _newTitle = ""; _newDesc = ""; _newAttach = "";
+            _rows = await Api.ListTeacherHomeworkAsync();
+        }
+        finally { _creating = false; StateHasChanged(); }
+    }
+
+    private async Task TogglePublish(Guid id, bool publish)
+    {
+        await Api.ToggleHomeworkPublishAsync(id, publish);
+        _rows = await Api.ListTeacherHomeworkAsync();
+        StateHasChanged();
+    }
+}

@@ -1,0 +1,201 @@
+@page "/student/notes"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject NavigationManager Nav
+
+<PageTitle>ملاحظاتي</PageTitle>
+
+<div class="notes-page">
+    <div class="fs-container">
+        <header class="np-head">
+            <h1>📝 ملاحظاتي</h1>
+            <p class="fs-text-muted">كل الملاحظات التي كتبتها على دروسك في مكان واحد.</p>
+        </header>
+
+        <div class="np-toolbar fs-card">
+            <input type="search"
+                   class="np-search"
+                   placeholder="ابحث في الملاحظات..."
+                   @bind="_search"
+                   @bind:event="oninput"
+                   @onkeyup="OnSearchKey" />
+            <button class="fs-btn fs-btn-primary fs-btn-sm" @onclick="Reload" disabled="@_busy">
+                @(_busy ? "..." : "🔍 بحث")
+            </button>
+            @if (!string.IsNullOrEmpty(_search))
+            {
+                <button class="fs-btn fs-btn-outline fs-btn-sm" @onclick="ClearSearch">إلغاء</button>
+            }
+        </div>
+
+        @if (!_loaded)
+        {
+            <div class="fs-center" style="padding:80px"><span class="fs-spinner"></span></div>
+        }
+        else if (_data is null)
+        {
+            <div class="fs-alert fs-alert-error">تعذّر التحميل</div>
+        }
+        else if (_data.TotalCount == 0)
+        {
+            <div class="fs-card empty">
+                <div style="font-size:64px">📓</div>
+                <h3>لم تكتب أي ملاحظات بعد</h3>
+                <p class="fs-text-muted">افتح أي درس واكتب ملاحظاتك في القسم الخاص بك أسفل الفيديو.</p>
+                <a href="/courses" class="fs-btn fs-btn-primary">تصفّح الدورات</a>
+            </div>
+        }
+        else
+        {
+            <div class="np-stats">
+                <span><strong>@_data.TotalCount</strong> ملاحظة</span>
+                <span>·</span>
+                <span><strong>@_data.CoursesWithNotesCount</strong> دورة</span>
+                @if (_data.Notes.Count != _data.TotalCount)
+                {
+                    <span>·</span>
+                    <span class="fs-text-muted">@_data.Notes.Count نتيجة بحث</span>
+                }
+            </div>
+
+            @if (_data.Notes.Count == 0)
+            {
+                <div class="fs-card empty">
+                    <p class="fs-text-muted">لا توجد ملاحظات تطابق بحثك.</p>
+                </div>
+            }
+            else
+            {
+                <div class="np-grid">
+                    @foreach (var grp in _data.Notes.GroupBy(n => new { n.CourseId, n.CourseTitle, n.SubjectName }))
+                    {
+                        <section class="np-course-block">
+                            <header class="np-course-head">
+                                <h3>📚 @grp.Key.CourseTitle</h3>
+                                <small class="fs-text-muted">@grp.Key.SubjectName · @grp.Count() ملاحظة</small>
+                            </header>
+                            <div class="np-list">
+                                @foreach (var n in grp)
+                                {
+                                    <article class="np-note fs-card">
+                                        <header>
+                                            <a href="/lessons/@n.LessonId/watch" class="np-lesson-link">
+                                                📖 @n.LessonTitle
+                                            </a>
+                                            <small class="fs-text-muted">@FormatTime(n.UpdatedAtUtc)</small>
+                                        </header>
+                                        <pre class="np-body">@Excerpt(n.Body)</pre>
+                                        <footer>
+                                            <a href="/lessons/@n.LessonId/watch" class="fs-btn fs-btn-ghost fs-btn-sm">
+                                                افتح الدرس ←
+                                            </a>
+                                        </footer>
+                                    </article>
+                                }
+                            </div>
+                        </section>
+                    }
+                </div>
+            }
+        }
+    </div>
+</div>
+
+<style>
+    .notes-page { padding: var(--fs-s-8) 0; min-height: calc(100vh - 72px); }
+    .np-head { margin-bottom: var(--fs-s-4); }
+    .np-head h1 { margin: 0 0 var(--fs-s-1); font-size: 26px; }
+
+    .np-toolbar { display: flex; gap: var(--fs-s-2); align-items: center; padding: var(--fs-s-3); margin-bottom: var(--fs-s-4); }
+    .np-search {
+        flex: 1; padding: var(--fs-s-2) var(--fs-s-3);
+        border: 1px solid var(--fs-border); border-radius: var(--fs-r-md);
+        font-size: 14px;
+    }
+    .np-search:focus { outline: none; border-color: var(--fs-primary); }
+
+    .empty { padding: 60px var(--fs-s-5); text-align: center; }
+    .empty h3 { margin: var(--fs-s-3) 0 var(--fs-s-2); }
+
+    .np-stats { display: flex; gap: var(--fs-s-2); align-items: baseline; font-size: 14px; margin-bottom: var(--fs-s-4); flex-wrap: wrap; }
+    .np-stats strong { color: var(--fs-primary); font-size: 18px; font-weight: 800; margin-left: 4px; }
+
+    .np-grid { display: flex; flex-direction: column; gap: var(--fs-s-5); }
+    .np-course-head { padding-bottom: var(--fs-s-2); border-bottom: 2px solid var(--fs-border); margin-bottom: var(--fs-s-3); }
+    .np-course-head h3 { margin: 0 0 4px; font-size: 18px; }
+    .np-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: var(--fs-s-3); }
+
+    .np-note { padding: var(--fs-s-3) var(--fs-s-4); display: flex; flex-direction: column; gap: var(--fs-s-2); }
+    .np-note header { display: flex; justify-content: space-between; align-items: baseline; gap: var(--fs-s-2); flex-wrap: wrap; }
+    .np-lesson-link { color: var(--fs-primary); font-weight: 600; font-size: 14px; text-decoration: none; }
+    .np-lesson-link:hover { text-decoration: underline; }
+    .np-body {
+        margin: 0; padding: var(--fs-s-3);
+        background: #FFFEF7; border-radius: var(--fs-r-sm);
+        font-family: inherit; font-size: 14px; line-height: 1.7;
+        white-space: pre-wrap; word-wrap: break-word;
+        max-height: 200px; overflow: hidden; position: relative;
+    }
+    .np-note footer { display: flex; justify-content: flex-end; }
+</style>
+
+@code {
+    private FSEdu.Shared.Contracts.Courses.MyNotesResponse? _data;
+    private bool _loaded;
+    private bool _busy;
+    private string _search = "";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            if (Auth.CurrentUser is null)
+            {
+                Nav.NavigateTo("/login");
+                return;
+            }
+            await Reload();
+        }
+    }
+
+    private async Task Reload()
+    {
+        _busy = true; StateHasChanged();
+        try
+        {
+            _data = await Api.GetMyNotesAsync(string.IsNullOrWhiteSpace(_search) ? null : _search);
+            _loaded = true;
+        }
+        finally { _busy = false; StateHasChanged(); }
+    }
+
+    private async Task OnSearchKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await Reload();
+    }
+
+    private async Task ClearSearch()
+    {
+        _search = "";
+        await Reload();
+    }
+
+    private static string Excerpt(string body)
+    {
+        if (string.IsNullOrEmpty(body)) return "";
+        return body.Length <= 600 ? body : body.Substring(0, 600).TrimEnd() + "…";
+    }
+
+    private static string FormatTime(DateTime utc)
+    {
+        var local = utc.ToLocalTime();
+        var diff = DateTime.Now - local;
+        if (diff.TotalMinutes < 1) return "الآن";
+        if (diff.TotalMinutes < 60) return $"منذ {(int)diff.TotalMinutes} د";
+        if (diff.TotalHours < 24) return $"منذ {(int)diff.TotalHours} س";
+        if (diff.TotalDays < 7) return $"منذ {(int)diff.TotalDays} يوم";
+        return local.ToString("yyyy/MM/dd");
+    }
+}

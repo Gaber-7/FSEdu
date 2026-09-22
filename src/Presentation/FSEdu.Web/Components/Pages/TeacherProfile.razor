@@ -1,0 +1,273 @@
+@page "/teachers/{TeacherId:guid}"
+@page "/teacher/{TeacherId:guid}"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject IConfiguration Config
+
+<PageTitle>@(_data?.FullName ?? "ملف المدرّس")</PageTitle>
+
+<div class="page">
+    <div class="fs-container">
+        @if (!_loaded)
+        {
+            <div class="fs-center" style="padding:80px"><span class="fs-spinner"></span></div>
+        }
+        else if (_data is null)
+        {
+            <div class="fs-card fs-center empty">
+                <div style="font-size:64px">🤷</div>
+                <h3>المدرّس غير موجود</h3>
+                <a href="/" class="fs-btn fs-btn-outline">الرئيسية</a>
+            </div>
+        }
+        else
+        {
+            <!-- Hero -->
+            <div class="t-hero">
+                <div class="t-avatar">
+                    @if (!string.IsNullOrEmpty(_data.AvatarUrl))
+                    {
+                        <img src="@AvatarFullUrl(_data.AvatarUrl)" alt="@_data.FullName" />
+                    }
+                    else
+                    {
+                        @_data.FullName.FirstOrDefault()
+                    }
+                </div>
+                <div class="t-info">
+                    <div class="t-name-row">
+                        <h1>أ/ @_data.FullName</h1>
+                        @if (_data.Verified)
+                        {
+                            <span class="verified" title="مدرّس معتمد">✓</span>
+                        }
+                        @if (_data.TwoFactorEnabled)
+                        {
+                            <span class="badge-2fa" title="حساب مؤمَّن بالمصادقة الثنائية">🔐 2FA</span>
+                        }
+                        @if (Auth.CurrentUser?.Id == TeacherId)
+                        {
+                            <a href="/teacher/profile/edit" class="fs-btn fs-btn-outline fs-btn-sm" style="margin-right:auto">✏️ تعديل ملفّي</a>
+                        }
+                    </div>
+                    <div class="t-meta">
+                        @if (_data.YearsOfExperience > 0)
+                        {
+                            <span>👨‍🎓 @_data.YearsOfExperience سنة خبرة</span>
+                        }
+                        @if (_data.RatingsCount > 0)
+                        {
+                            <span class="t-rating">
+                                @RenderStars((int)Math.Round((double)_data.RatingAvg))
+                                <strong>@_data.RatingAvg.ToString("0.0")</strong>
+                                <small>(@_data.RatingsCount تقييم)</small>
+                            </span>
+                        }
+                    </div>
+                    @if (_data.SubjectNames.Length > 0)
+                    {
+                        <div class="t-tags">
+                            @foreach (var s in _data.SubjectNames)
+                            { <span class="tag">📘 @s</span> }
+                        </div>
+                    }
+                </div>
+            </div>
+
+            @if (!string.IsNullOrEmpty(_data.Bio))
+            {
+                <div class="fs-card t-bio">
+                    <h3>نبذة</h3>
+                    <p>@_data.Bio</p>
+                </div>
+            }
+
+            <!-- Stats -->
+            <div class="t-stats">
+                <div class="t-stat">
+                    <div class="t-stat-value">@_data.Stats.PublishedCoursesCount</div>
+                    <div class="t-stat-label">دورات منشورة</div>
+                </div>
+                <div class="t-stat">
+                    <div class="t-stat-value">@_data.Stats.TotalLessons</div>
+                    <div class="t-stat-label">إجمالي الدروس</div>
+                </div>
+                <div class="t-stat">
+                    <div class="t-stat-value">@_data.Stats.TotalEnrollments</div>
+                    <div class="t-stat-label">طلاب مسجّلون</div>
+                </div>
+                <div class="t-stat">
+                    <div class="t-stat-value">@_data.Stats.LiveSessionsHosted</div>
+                    <div class="t-stat-label">حصص مباشرة</div>
+                </div>
+                <div class="t-stat">
+                    <div class="t-stat-value">@_data.Stats.RecordingsCount</div>
+                    <div class="t-stat-label">تسجيلات متاحة</div>
+                </div>
+            </div>
+
+            @if (_data.Qualifications.Length > 0)
+            {
+                <div class="fs-card t-quals">
+                    <h3>المؤهلات</h3>
+                    <ul>
+                        @foreach (var q in _data.Qualifications)
+                        {
+                            <li>
+                                <strong>@q.Title</strong>
+                                <small>@q.Institution · @q.Year</small>
+                            </li>
+                        }
+                    </ul>
+                </div>
+            }
+
+            <!-- Courses -->
+            <h2 class="section-title">📚 دورات أ/ @_data.FullName</h2>
+            @if (_data.PublishedCourses.Length == 0)
+            {
+                <p class="fs-text-muted">لا توجد دورات منشورة بعد.</p>
+            }
+            else
+            {
+                <div class="courses-grid">
+                    @foreach (var c in _data.PublishedCourses)
+                    {
+                        <a href="/courses/@c.Id" class="course-card fs-card">
+                            <div class="cc-thumb">📖</div>
+                            <div class="cc-body">
+                                <h3>@c.Title</h3>
+                                <small class="fs-text-muted">@c.SubjectName · @c.StageName</small>
+                                <div class="cc-meta">
+                                    <span>@c.LessonsCount درس</span>
+                                    @if (c.RatingAvg > 0)
+                                    { <span>⭐ @c.RatingAvg.ToString("0.0")</span> }
+                                    @if (c.EnrollmentCount > 0)
+                                    { <span>👥 @c.EnrollmentCount</span> }
+                                </div>
+                            </div>
+                        </a>
+                    }
+                </div>
+            }
+        }
+    </div>
+</div>
+
+<style>
+    .page { padding: var(--fs-s-8) 0; min-height: calc(100vh - 72px); }
+    .empty { padding: 60px; text-align: center; }
+    .empty h3 { margin: var(--fs-s-3) 0 var(--fs-s-4); }
+
+    /* Hero */
+    .t-hero {
+        display: flex; gap: var(--fs-s-5); align-items: center;
+        padding: var(--fs-s-6); margin-bottom: var(--fs-s-5);
+        background: linear-gradient(135deg, var(--fs-primary-soft), white);
+        border-radius: var(--fs-r-lg);
+    }
+    .t-avatar {
+        width: 100px; height: 100px; border-radius: 50%;
+        background: linear-gradient(135deg, var(--fs-primary), var(--fs-secondary));
+        color: white; font-weight: 800; font-size: 42px;
+        display: flex; align-items: center; justify-content: center;
+        flex-shrink: 0; overflow: hidden;
+    }
+    .t-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .t-info { flex: 1; min-width: 0; }
+    .t-name-row { display: flex; align-items: center; gap: var(--fs-s-2); margin-bottom: 4px; flex-wrap: wrap; }
+    .t-name-row h1 { margin: 0; font-size: 26px; }
+    .verified {
+        display: inline-flex; width: 24px; height: 24px; border-radius: 50%;
+        background: var(--fs-primary); color: white; font-size: 13px;
+        align-items: center; justify-content: center; font-weight: 800;
+    }
+    .badge-2fa {
+        display: inline-flex; align-items: center; gap: 4px;
+        background: #DCFCE7; color: #15803D;
+        padding: 3px 10px; border-radius: var(--fs-r-full);
+        font-size: 11px; font-weight: 700;
+        border: 1px solid #BBF7D0;
+    }
+    .t-meta { display: flex; gap: var(--fs-s-4); flex-wrap: wrap; color: var(--fs-text-muted); font-size: 14px; margin-bottom: var(--fs-s-2); }
+    .t-rating { color: #F59E0B; display: inline-flex; align-items: center; gap: 4px; }
+    .t-rating strong { color: var(--fs-text); }
+    .t-rating small { color: var(--fs-text-muted); }
+    .t-tags { display: flex; gap: var(--fs-s-2); flex-wrap: wrap; }
+    .tag { background: white; color: var(--fs-primary); padding: 4px 10px; border-radius: var(--fs-r-full); font-size: 12px; border: 1px solid var(--fs-primary-soft); }
+
+    @@media (max-width: 600px) {
+        .t-hero { flex-direction: column; text-align: center; }
+        .t-meta, .t-tags { justify-content: center; }
+    }
+
+    /* Bio */
+    .t-bio { padding: var(--fs-s-4); margin-bottom: var(--fs-s-4); }
+    .t-bio h3 { margin: 0 0 var(--fs-s-2); font-size: 16px; }
+    .t-bio p { margin: 0; line-height: 1.7; color: var(--fs-text); }
+
+    /* Stats */
+    .t-stats {
+        display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: var(--fs-s-2); margin-bottom: var(--fs-s-5);
+    }
+    .t-stat { text-align: center; padding: var(--fs-s-3); background: white; border-radius: var(--fs-r-md); border: 1px solid var(--fs-border); }
+    .t-stat-value { font-size: 24px; font-weight: 800; color: var(--fs-primary); line-height: 1; }
+    .t-stat-label { font-size: 12px; color: var(--fs-text-muted); margin-top: 4px; }
+
+    /* Qualifications */
+    .t-quals { padding: var(--fs-s-4); margin-bottom: var(--fs-s-5); }
+    .t-quals h3 { margin: 0 0 var(--fs-s-2); font-size: 16px; }
+    .t-quals ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--fs-s-2); }
+    .t-quals li { padding: var(--fs-s-2); background: var(--fs-bg); border-radius: var(--fs-r-md); }
+    .t-quals strong { display: block; font-size: 14px; }
+    .t-quals small { font-size: 12px; color: var(--fs-text-muted); }
+
+    .section-title { font-size: 19px; margin: var(--fs-s-5) 0 var(--fs-s-3); }
+
+    .courses-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: var(--fs-s-3); }
+    .course-card {
+        text-decoration: none; color: inherit;
+        padding: 0; overflow: hidden;
+        transition: transform 0.15s, box-shadow 0.15s;
+    }
+    .course-card:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0,0,0,0.10); }
+    .cc-thumb {
+        height: 100px; background: linear-gradient(135deg, var(--fs-primary), var(--fs-secondary));
+        display: flex; align-items: center; justify-content: center; font-size: 42px;
+    }
+    .cc-body { padding: var(--fs-s-3); }
+    .cc-body h3 { margin: 0 0 4px; font-size: 16px; }
+    .cc-body small { display: block; font-size: 12px; }
+    .cc-meta { display: flex; gap: var(--fs-s-3); margin-top: var(--fs-s-2); font-size: 12px; color: var(--fs-text-muted); flex-wrap: wrap; }
+</style>
+
+@code {
+    [Parameter] public Guid TeacherId { get; set; }
+
+    private FSEdu.Shared.Contracts.Teachers.TeacherProfileDto? _data;
+    private bool _loaded;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try { _data = await Api.GetTeacherProfileAsync(TeacherId); }
+            catch { _data = null; }
+            _loaded = true;
+            StateHasChanged();
+        }
+    }
+
+    private string AvatarFullUrl(string? path)
+    {
+        if (string.IsNullOrEmpty(path)) return "";
+        if (path.StartsWith("http", StringComparison.OrdinalIgnoreCase)) return path;
+        var apiBase = (Config["ApiBaseUrl"] ?? "").TrimEnd('/');
+        return apiBase + path;
+    }
+
+    private static string RenderStars(int filled) =>
+        new string('★', Math.Clamp(filled, 0, 5)) + new string('☆', Math.Clamp(5 - filled, 0, 5));
+}

@@ -1,0 +1,262 @@
+@page "/my/referral"
+@using FSEdu.Shared.Contracts.Students
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@rendermode InteractiveServer
+
+<PageTitle>اَدْعُ صديقًا - FSEdu</PageTitle>
+
+<div class="ref-page fs-container">
+    <div class="page-head">
+        <h1>🎁 اَدْعُ صديقًا واربح!</h1>
+        <p class="fs-text-muted">شارك كودك الخاص مع أصدقائك، وعند اشتراكهم الأول تحصلون كلاكما على رصيد خصم.</p>
+    </div>
+
+    @if (!_loaded)
+    {
+        <div class="fs-loading"><span class="fs-spinner"></span><span>جارٍ التحميل...</span></div>
+    }
+    else if (_info is null)
+    {
+        <div class="fs-alert fs-alert-danger">تعذّر تحميل معلومات الإحالة. حاول لاحقًا.</div>
+    }
+    else
+    {
+        <div class="hero-card">
+            <div class="hero-left">
+                <small class="hero-label">كودك الخاص</small>
+                <div class="code-row">
+                    <code class="code-pill">@_info.MyCode</code>
+                    <button class="fs-btn fs-btn-primary fs-btn-sm" @onclick="CopyCode">
+                        @(_copied ? "✓ تم النسخ" : "📋 نسخ")
+                    </button>
+                </div>
+                <small class="fs-text-muted">شارك الكود لأي طالب جديد، وعند تسجيله واشتراكه ستحصل على رصيد خصم.</small>
+            </div>
+            <div class="hero-right">
+                <div class="big-stat">
+                    <span class="big-stat-val">@_info.CreditEgp</span>
+                    <span class="big-stat-lbl">جنيه رصيد</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="kpi-row">
+            <div class="kpi"><span class="kpi-val">@_info.InvitedCount</span><span class="kpi-lbl">صديق دعوته</span></div>
+            <div class="kpi"><span class="kpi-val">@_info.RewardedCount</span><span class="kpi-lbl">إحالة مكافأة</span></div>
+            <div class="kpi"><span class="kpi-val">@_info.TotalRewardEgp</span><span class="kpi-lbl">إجمالي المكافآت</span></div>
+        </div>
+
+        @if (string.IsNullOrEmpty(_info.RedeemedCode))
+        {
+            <div class="redeem-card">
+                <h3>📥 لديك كود إحالة من صديق؟</h3>
+                <p class="fs-text-muted">أدخل الكود لتسجيله. عند اشتراكك الأول يحصل صديقك على رصيد، ويُمكن أن تحصل على خصم أيضًا.</p>
+                <div class="redeem-row">
+                    <input class="fs-input" placeholder="مثال: ABC23XYZ"
+                           @bind="_inputCode" @bind:event="oninput"
+                           style="text-transform: uppercase;" maxlength="16" />
+                    <button class="fs-btn fs-btn-primary" @onclick="Redeem" disabled="@_busy">
+                        @if (_busy) { <span class="fs-spinner"></span> } else { <text>تسجيل الكود</text> }
+                    </button>
+                </div>
+                @if (!string.IsNullOrEmpty(_redeemError))
+                {
+                    <div class="fs-alert fs-alert-danger">@_redeemError</div>
+                }
+                @if (_redeemSuccess)
+                {
+                    <div class="fs-alert fs-alert-success">تم تسجيل الكود بنجاح! 🎉</div>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="redeem-card redeem-done">
+                <h3>✓ تم استخدام كود إحالة</h3>
+                <p>أنت مدعوّ من صديق حمل الكود: <strong><code>@_info.RedeemedCode</code></strong></p>
+            </div>
+        }
+
+        @if (_info.Invited.Count > 0)
+        {
+            <div class="invited-section">
+                <h3>👥 أصدقاء دعوتهم</h3>
+                <div class="invited-list">
+                    @foreach (var row in _info.Invited)
+                    {
+                        <div class="invited-row">
+                            <div class="iv-name">
+                                <span class="iv-avatar">👤</span>
+                                <div>
+                                    <strong>@row.MaskedName</strong>
+                                    <small>@row.CreatedAtUtc.ToLocalTime().ToString("yyyy/MM/dd")</small>
+                                </div>
+                            </div>
+                            @if (row.Rewarded)
+                            {
+                                <span class="iv-badge iv-rewarded">✓ مكافأة +@row.RewardEgp ج.م</span>
+                            }
+                            else
+                            {
+                                <span class="iv-badge iv-pending">⏳ في انتظار أول اشتراك</span>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+    }
+</div>
+
+<style>
+    .ref-page { min-height: calc(100vh - 72px); padding: var(--fs-s-8) 0; }
+    .page-head { margin-bottom: var(--fs-s-6); }
+    .page-head h1 { margin: 0 0 var(--fs-s-2); }
+
+    .hero-card {
+        background: linear-gradient(135deg, var(--fs-primary), var(--fs-secondary));
+        color: white; padding: var(--fs-s-6);
+        border-radius: var(--fs-r-xl);
+        display: grid; grid-template-columns: 1.5fr 1fr; gap: var(--fs-s-5);
+        align-items: center;
+        box-shadow: 0 12px 30px rgba(91,79,229,0.25);
+        margin-bottom: var(--fs-s-5);
+    }
+    @@media (max-width: 700px) { .hero-card { grid-template-columns: 1fr; } }
+    .hero-left { display: flex; flex-direction: column; gap: var(--fs-s-3); }
+    .hero-label { opacity: 0.85; font-size: 13px; font-weight: 600; }
+    .code-row { display: flex; align-items: center; gap: var(--fs-s-3); flex-wrap: wrap; }
+    .code-pill {
+        background: rgba(255,255,255,0.18);
+        padding: 10px 18px; border-radius: var(--fs-r-md);
+        font-family: var(--fs-font-mono, monospace); font-weight: 800;
+        font-size: 24px; letter-spacing: 2px; color: white;
+        border: 2px dashed rgba(255,255,255,0.4);
+    }
+    .hero-left small { color: rgba(255,255,255,0.8); }
+
+    .hero-right { display: flex; align-items: center; justify-content: center; }
+    .big-stat {
+        background: rgba(255,255,255,0.18);
+        border-radius: var(--fs-r-lg);
+        padding: var(--fs-s-5);
+        text-align: center; min-width: 140px;
+    }
+    .big-stat-val { font-size: 42px; font-weight: 800; display: block; line-height: 1; }
+    .big-stat-lbl { font-size: 13px; opacity: 0.9; display: block; margin-top: 4px; }
+
+    .kpi-row {
+        display: grid; grid-template-columns: repeat(3, 1fr);
+        gap: var(--fs-s-4); margin-bottom: var(--fs-s-6);
+    }
+    .kpi {
+        background: white; border: 1px solid var(--fs-border);
+        border-radius: var(--fs-r-lg); padding: var(--fs-s-4);
+        display: flex; flex-direction: column; align-items: center;
+    }
+    .kpi-val { font-size: 28px; font-weight: 800; color: var(--fs-primary); }
+    .kpi-lbl { font-size: 13px; color: var(--fs-text-muted); }
+
+    .redeem-card {
+        background: white; border: 1px solid var(--fs-border);
+        border-radius: var(--fs-r-xl); padding: var(--fs-s-5);
+        margin-bottom: var(--fs-s-5);
+    }
+    .redeem-card h3 { margin: 0 0 var(--fs-s-2); }
+    .redeem-card.redeem-done { background: var(--fs-primary-soft); border-color: var(--fs-primary); }
+    .redeem-row {
+        display: grid; grid-template-columns: 1fr auto; gap: var(--fs-s-3);
+        margin: var(--fs-s-3) 0;
+    }
+    @@media (max-width: 500px) { .redeem-row { grid-template-columns: 1fr; } }
+
+    .invited-section {
+        background: white; border: 1px solid var(--fs-border);
+        border-radius: var(--fs-r-xl); padding: var(--fs-s-5);
+    }
+    .invited-section h3 { margin: 0 0 var(--fs-s-4); }
+    .invited-list { display: flex; flex-direction: column; gap: var(--fs-s-2); }
+    .invited-row {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: var(--fs-s-3); border-radius: var(--fs-r-md);
+        background: var(--fs-bg);
+    }
+    .iv-name { display: flex; align-items: center; gap: var(--fs-s-3); }
+    .iv-name strong { display: block; font-size: 14px; }
+    .iv-name small { display: block; font-size: 12px; color: var(--fs-text-muted); }
+    .iv-avatar {
+        width: 40px; height: 40px; border-radius: 50%;
+        background: var(--fs-primary-soft); color: var(--fs-primary);
+        display: flex; align-items: center; justify-content: center;
+        font-size: 18px;
+    }
+    .iv-badge {
+        padding: 4px 12px; border-radius: var(--fs-r-full);
+        font-size: 12px; font-weight: 700;
+    }
+    .iv-rewarded { background: var(--fs-success-soft, #DCFCE7); color: var(--fs-success, #16A34A); }
+    .iv-pending { background: var(--fs-bg); color: var(--fs-text-muted); }
+</style>
+
+@code {
+    private MyReferralInfoDto? _info;
+    private bool _loaded;
+    private string _inputCode = "";
+    private string? _redeemError;
+    private bool _redeemSuccess;
+    private bool _busy;
+    private bool _copied;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            if (!Auth.IsInRole("Student"))
+            {
+                Nav.NavigateTo("/login");
+                return;
+            }
+            _info = await Api.GetMyReferralInfoAsync();
+            _loaded = true;
+            StateHasChanged();
+        }
+    }
+
+    private async Task CopyCode()
+    {
+        if (_info is null) return;
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", _info.MyCode);
+            _copied = true; StateHasChanged();
+            await Task.Delay(2000);
+            _copied = false; StateHasChanged();
+        }
+        catch { }
+    }
+
+    private async Task Redeem()
+    {
+        _redeemError = null; _redeemSuccess = false;
+        if (string.IsNullOrWhiteSpace(_inputCode)) { _redeemError = "أدخل الكود"; return; }
+        _busy = true; StateHasChanged();
+        try
+        {
+            var (ok, err) = await Api.RedeemReferralCodeAsync(_inputCode.Trim());
+            if (ok)
+            {
+                _redeemSuccess = true;
+                _info = await Api.GetMyReferralInfoAsync();
+            }
+            else
+            {
+                _redeemError = err?.Message ?? "تعذّر تسجيل الكود";
+            }
+        }
+        finally { _busy = false; StateHasChanged(); }
+    }
+}

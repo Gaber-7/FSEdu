@@ -1,0 +1,276 @@
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+
+<div class="qa-block">
+    <div class="qa-head">
+        <h3>❓ أسئلة وأجوبة</h3>
+        @if (_data is not null)
+        {
+            <small class="fs-text-muted">
+                @_data.TotalCount سؤال @(_data.UnansweredCount > 0 ? $"· {_data.UnansweredCount} بانتظار الرد" : "")
+            </small>
+        }
+    </div>
+
+    @if (_data is null)
+    {
+        <div class="fs-center" style="padding:30px"><span class="fs-spinner"></span></div>
+    }
+    else
+    {
+        @if (_data.CanAsk)
+        {
+            <div class="ask-box fs-card">
+                <textarea class="fs-input" rows="3"
+                          placeholder="اكتب سؤالك على هذا الدرس..."
+                          @bind="_newQuestion"></textarea>
+                <div class="ask-foot">
+                    <button class="fs-btn fs-btn-primary"
+                            disabled="@(_busy || string.IsNullOrWhiteSpace(_newQuestion) || _newQuestion.Trim().Length < 3)"
+                            @onclick="Ask">
+                        @if (_busy) { <span class="fs-spinner"></span> }
+                        إرسال السؤال
+                    </button>
+                    @if (_error is not null)
+                    { <small style="color:var(--fs-danger);margin-right:auto">@_error</small> }
+                </div>
+            </div>
+        }
+
+        @if (_data.Questions.Count == 0)
+        {
+            <p class="fs-text-muted empty-q">لا توجد أسئلة بعد. كن أول من يسأل!</p>
+        }
+        else
+        {
+            <div class="q-list">
+                @foreach (var q in _data.Questions)
+                {
+                    <div class="q-card @(string.IsNullOrEmpty(q.AnswerBody) ? "open" : "answered")">
+                        <div class="q-head">
+                            <div class="q-avatar">@q.AskedByName.FirstOrDefault()</div>
+                            <div class="q-meta">
+                                <strong>@q.AskedByName</strong>
+                                <small>@FormatRelative(q.CreatedAtUtc)</small>
+                            </div>
+                            @if (Auth.IsInRole("Student") && Auth.CurrentUser?.Id != q.AskedByUserId)
+                            {
+                                <button class="vote-btn @(q.MyVoted ? "voted" : "")"
+                                        @onclick="() => ToggleVote(q.Id)"
+                                        disabled="@_votingIds.Contains(q.Id)"
+                                        title="@(q.MyVoted ? "أنت تدعم هذا السؤال" : "ادعم هذا السؤال")">
+                                    <span class="vote-arrow">▲</span>
+                                    <span class="vote-count">@q.VotesCount</span>
+                                </button>
+                            }
+                            else if (q.VotesCount > 0)
+                            {
+                                <span class="vote-display" title="عدد المؤيّدين">
+                                    ▲ @q.VotesCount
+                                </span>
+                            }
+                            @if (!string.IsNullOrEmpty(q.AnswerBody))
+                            { <span class="status-pill">✓ مُجاب</span> }
+                            else
+                            { <span class="status-pill open">بانتظار الرد</span> }
+                        </div>
+                        <p class="q-body">@q.Body</p>
+
+                        @if (!string.IsNullOrEmpty(q.AnswerBody))
+                        {
+                            <div class="answer-card">
+                                <div class="a-head">
+                                    <span class="a-icon">👨‍🏫</span>
+                                    <strong>@q.AnsweredByName</strong>
+                                    <small>@FormatRelative(q.AnsweredAtUtc!.Value)</small>
+                                </div>
+                                <p class="a-body">@q.AnswerBody</p>
+                            </div>
+                        }
+                        else if (_data.CanAnswer)
+                        {
+                            @if (_replyingTo == q.Id)
+                            {
+                                <div class="reply-box">
+                                    <textarea class="fs-input" rows="2" @bind="_replyBody"
+                                              placeholder="اكتب ردك..."></textarea>
+                                    <div class="reply-foot">
+                                        <button class="fs-btn fs-btn-primary" disabled="@_busy"
+                                                @onclick="() => SubmitAnswer(q.Id)">إرسال الرد</button>
+                                        <button class="fs-btn fs-btn-outline"
+                                                @onclick="() => { _replyingTo = null; _replyBody = string.Empty; }">إلغاء</button>
+                                    </div>
+                                </div>
+                            }
+                            else
+                            {
+                                <button class="fs-btn fs-btn-outline answer-btn"
+                                        @onclick="() => StartReply(q.Id)">💬 الرد</button>
+                            }
+                        }
+                    </div>
+                }
+            </div>
+        }
+    }
+</div>
+
+<style>
+    .qa-block { display: flex; flex-direction: column; gap: var(--fs-s-3); }
+    .qa-head { display: flex; justify-content: space-between; align-items: center; gap: var(--fs-s-3); flex-wrap: wrap; }
+    .qa-head h3 { margin: 0; font-size: 18px; }
+
+    .ask-box { padding: var(--fs-s-3); display: flex; flex-direction: column; gap: var(--fs-s-2); }
+    .ask-foot { display: flex; align-items: center; gap: var(--fs-s-2); }
+
+    .empty-q { padding: var(--fs-s-5); text-align: center; }
+
+    .q-list { display: flex; flex-direction: column; gap: var(--fs-s-2); }
+    .q-card {
+        padding: var(--fs-s-3); border: 1px solid var(--fs-border); border-radius: var(--fs-r-md);
+        background: white;
+    }
+    .q-card.open { border-right: 3px solid #F59E0B; }
+    .q-card.answered { border-right: 3px solid var(--fs-success); }
+    .q-head { display: flex; align-items: center; gap: var(--fs-s-2); margin-bottom: 6px; flex-wrap: wrap; }
+    .q-avatar {
+        width: 32px; height: 32px; border-radius: 50%;
+        background: var(--fs-bg); color: var(--fs-text);
+        display: flex; align-items: center; justify-content: center;
+        font-weight: 700; font-size: 14px;
+    }
+    .q-meta { flex: 1; min-width: 0; }
+    .q-meta strong { display: block; font-size: 13px; }
+    .q-meta small { display: block; font-size: 11px; color: var(--fs-text-muted); }
+    .status-pill {
+        font-size: 11px; padding: 2px 8px; border-radius: var(--fs-r-full);
+        background: rgba(16,185,129,0.15); color: #047857; font-weight: 700;
+    }
+    .status-pill.open { background: rgba(245,158,11,0.15); color: #B45309; }
+    .vote-btn {
+        display: inline-flex; align-items: center; gap: 4px;
+        padding: 4px 10px; border-radius: var(--fs-r-full);
+        background: var(--fs-bg); border: 1px solid var(--fs-border);
+        cursor: pointer; font-family: inherit; font-size: 13px; font-weight: 700;
+        color: var(--fs-text-muted);
+        transition: all var(--fs-trans);
+    }
+    .vote-btn:hover { border-color: var(--fs-primary); color: var(--fs-primary); transform: translateY(-1px); }
+    .vote-btn.voted { background: var(--fs-primary); color: white; border-color: var(--fs-primary); }
+    .vote-btn:disabled { opacity: 0.6; cursor: wait; }
+    .vote-arrow { font-size: 11px; }
+    .vote-count { min-width: 14px; text-align: center; }
+    .vote-display { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--fs-text-muted); padding: 4px 10px; }
+
+    .q-body { margin: 4px 0 var(--fs-s-2); font-size: 14px; line-height: 1.6; }
+
+    .answer-card {
+        background: var(--fs-primary-soft);
+        border-right: 3px solid var(--fs-primary);
+        padding: var(--fs-s-2) var(--fs-s-3);
+        border-radius: var(--fs-r-md);
+        margin-top: var(--fs-s-2);
+    }
+    .a-head { display: flex; align-items: center; gap: var(--fs-s-2); margin-bottom: 4px; flex-wrap: wrap; }
+    .a-icon { font-size: 18px; }
+    .a-head strong { font-size: 13px; color: var(--fs-primary); }
+    .a-head small { font-size: 11px; color: var(--fs-text-muted); }
+    .a-body { margin: 0; font-size: 14px; line-height: 1.6; color: var(--fs-text); }
+
+    .answer-btn { padding: 4px 12px; font-size: 12px; }
+    .reply-box { background: var(--fs-bg); padding: var(--fs-s-2); border-radius: var(--fs-r-md); margin-top: var(--fs-s-2); display: flex; flex-direction: column; gap: var(--fs-s-2); }
+    .reply-foot { display: flex; gap: var(--fs-s-2); }
+    .reply-foot .fs-btn { padding: 6px 14px; font-size: 13px; }
+</style>
+
+@code {
+    [Parameter] public Guid LessonId { get; set; }
+
+    private FSEdu.Shared.Contracts.Courses.LessonQuestionsResponse? _data;
+    private string _newQuestion = "";
+    private Guid? _replyingTo;
+    private string _replyBody = "";
+    private bool _busy;
+    private string? _error;
+    private HashSet<Guid> _votingIds = new();
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        try { _data = await Api.GetLessonQuestionsAsync(LessonId); }
+        catch { _data = null; }
+        StateHasChanged();
+    }
+
+    private async Task Ask()
+    {
+        var body = _newQuestion?.Trim() ?? "";
+        if (body.Length < 3) return;
+        _busy = true; _error = null; StateHasChanged();
+        try
+        {
+            var err = await Api.AskLessonQuestionAsync(LessonId, body);
+            if (err is not null) _error = err.Message;
+            else { _newQuestion = ""; await Load(); }
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; StateHasChanged(); }
+    }
+
+    private void StartReply(Guid questionId) { _replyingTo = questionId; _replyBody = ""; }
+
+    private async Task SubmitAnswer(Guid questionId)
+    {
+        var body = _replyBody?.Trim() ?? "";
+        if (body.Length < 2) return;
+        _busy = true; StateHasChanged();
+        try
+        {
+            var err = await Api.AnswerLessonQuestionAsync(questionId, body);
+            if (err is null)
+            {
+                _replyingTo = null;
+                _replyBody = "";
+                await Load();
+            }
+        }
+        catch { /* ignore */ }
+        finally { _busy = false; StateHasChanged(); }
+    }
+
+    private async Task ToggleVote(Guid questionId)
+    {
+        if (_votingIds.Contains(questionId)) return;
+        _votingIds.Add(questionId); StateHasChanged();
+        try
+        {
+            var resp = await Api.ToggleQuestionVoteAsync(questionId);
+            if (resp is not null && _data is not null)
+            {
+                // Patch the question in place to avoid full reload flicker.
+                var idx = _data.Questions.FindIndex(q => q.Id == questionId);
+                if (idx >= 0)
+                {
+                    var q = _data.Questions[idx];
+                    _data.Questions[idx] = q with
+                    {
+                        VotesCount = resp.VotesCount,
+                        MyVoted = resp.NowActive
+                    };
+                }
+            }
+        }
+        finally { _votingIds.Remove(questionId); StateHasChanged(); }
+    }
+
+    private static string FormatRelative(DateTime utc)
+    {
+        var diff = DateTime.UtcNow - utc;
+        if (diff.TotalSeconds < 60) return "الآن";
+        if (diff.TotalMinutes < 60) return $"منذ {(int)diff.TotalMinutes} د";
+        if (diff.TotalHours < 24) return $"منذ {(int)diff.TotalHours} س";
+        if (diff.TotalDays < 30) return $"منذ {(int)diff.TotalDays} يوم";
+        return utc.ToLocalTime().ToString("yyyy/MM/dd");
+    }
+}

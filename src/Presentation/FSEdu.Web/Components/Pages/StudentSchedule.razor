@@ -1,0 +1,207 @@
+@page "/student/schedule"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject NavigationManager Nav
+
+<PageTitle>جدولي</PageTitle>
+
+<div class="sched-page">
+    <div class="fs-container">
+        <header class="sch-head">
+            <h1>📅 جدولي</h1>
+            <div class="sch-toolbar">
+                <button class="sch-tab @(_days == 7 ? "active" : "")" @onclick="() => SetDays(7)">أسبوع</button>
+                <button class="sch-tab @(_days == 14 ? "active" : "")" @onclick="() => SetDays(14)">أسبوعان</button>
+                <button class="sch-tab @(_days == 30 ? "active" : "")" @onclick="() => SetDays(30)">شهر</button>
+            </div>
+        </header>
+
+        @if (!_loaded)
+        {
+            <div class="fs-center" style="padding:80px"><span class="fs-spinner"></span></div>
+        }
+        else if (_data is null)
+        {
+            <div class="fs-alert fs-alert-error">تعذّر التحميل</div>
+        }
+        else if (_data.Items.Count == 0)
+        {
+            <div class="fs-card empty">
+                <div style="font-size:64px">📭</div>
+                <h3>لا توجد مواعيد قادمة</h3>
+                <p class="fs-text-muted">لم يتم جدولة حصص أو واجبات في النطاق المحدّد.</p>
+                <a href="/student/live" class="fs-btn fs-btn-outline">عرض كل الحصص</a>
+            </div>
+        }
+        else
+        {
+            <div class="sch-summary fs-card">
+                <span><strong>@_data.Items.Count(i => i.Kind == "live")</strong> حصّة مباشرة</span>
+                <span>·</span>
+                <span><strong>@_data.Items.Count(i => i.Kind == "assessment")</strong> اختبار/واجب</span>
+            </div>
+
+            <div class="sch-days">
+                @foreach (var grp in _data.Items
+                    .GroupBy(i => i.AtUtc.ToLocalTime().Date)
+                    .OrderBy(g => g.Key))
+                {
+                    <section class="sch-day">
+                        <header class="sch-day-head">
+                            <strong>@DayLabel(grp.Key)</strong>
+                            <small class="fs-text-muted">@grp.Key.ToString("yyyy/MM/dd")</small>
+                        </header>
+                        <div class="sch-list">
+                            @foreach (var item in grp.OrderBy(i => i.AtUtc))
+                            {
+                                var time = item.AtUtc.ToLocalTime();
+                                var isLive = item.Kind == "live";
+                                var isLiveNow = isLive && string.Equals(item.Status, "Live", StringComparison.OrdinalIgnoreCase);
+                                <article class="sch-item @(isLive ? "kind-live" : "kind-ass") @(isLiveNow ? "now" : "")">
+                                    <div class="sch-time">
+                                        <strong>@time.ToString("HH:mm")</strong>
+                                        @if (item.DurationMinutes.HasValue)
+                                        {
+                                            <small>@item.DurationMinutes د</small>
+                                        }
+                                    </div>
+                                    <div class="sch-info">
+                                        <div class="sch-pills">
+                                            <span class="sch-pill">
+                                                @(isLive ? "🎥 حصّة مباشرة" : "📝 اختبار")
+                                            </span>
+                                            @if (isLiveNow)
+                                            {
+                                                <span class="sch-pill live-pill">🔴 الآن</span>
+                                            }
+                                            @if (!string.IsNullOrEmpty(item.SubjectName))
+                                            {
+                                                <span class="sch-pill subj">@item.SubjectName</span>
+                                            }
+                                        </div>
+                                        <h4>@item.Title</h4>
+                                        <small class="fs-text-muted">
+                                            @if (!string.IsNullOrEmpty(item.TeacherName)) { <text>أ/ @item.TeacherName</text> }
+                                            @if (!string.IsNullOrEmpty(item.CourseTitle)) { <text> · @item.CourseTitle</text> }
+                                        </small>
+                                    </div>
+                                    <div class="sch-actions">
+                                        @if (isLive)
+                                        {
+                                            <a href="/live/@item.Id" class="fs-btn fs-btn-primary fs-btn-sm">
+                                                @(isLiveNow ? "انضم الآن ←" : "عرض ←")
+                                            </a>
+                                        }
+                                        else
+                                        {
+                                            <a href="/assessments/@item.Id/take" class="fs-btn fs-btn-primary fs-btn-sm">
+                                                @(item.Status == "available" ? "ابدأ ←" : "عرض ←")
+                                            </a>
+                                        }
+                                    </div>
+                                </article>
+                            }
+                        </div>
+                    </section>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .sched-page { padding: var(--fs-s-8) 0; min-height: calc(100vh - 72px); }
+    .sch-head { display: flex; justify-content: space-between; align-items: center; gap: var(--fs-s-3); margin-bottom: var(--fs-s-4); flex-wrap: wrap; }
+    .sch-head h1 { margin: 0; font-size: 26px; }
+
+    .sch-toolbar { display: flex; gap: var(--fs-s-1); background: var(--fs-bg); padding: 3px; border-radius: var(--fs-r-full); }
+    .sch-tab {
+        background: transparent; border: none; cursor: pointer;
+        padding: 6px 14px; border-radius: var(--fs-r-full);
+        font-size: 13px; font-weight: 600; color: var(--fs-text-muted);
+        transition: all var(--fs-trans);
+    }
+    .sch-tab.active { background: white; color: var(--fs-primary); box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+
+    .empty { padding: 60px var(--fs-s-5); text-align: center; }
+    .empty h3 { margin: var(--fs-s-3) 0 var(--fs-s-2); }
+
+    .sch-summary { padding: var(--fs-s-3) var(--fs-s-4); margin-bottom: var(--fs-s-4); display: flex; gap: var(--fs-s-2); align-items: baseline; flex-wrap: wrap; }
+    .sch-summary strong { color: var(--fs-primary); font-size: 18px; font-weight: 800; margin-left: 4px; }
+
+    .sch-days { display: flex; flex-direction: column; gap: var(--fs-s-5); }
+    .sch-day-head { padding-bottom: var(--fs-s-2); border-bottom: 2px solid var(--fs-border); margin-bottom: var(--fs-s-3); display: flex; justify-content: space-between; align-items: baseline; gap: var(--fs-s-2); flex-wrap: wrap; }
+    .sch-day-head strong { font-size: 17px; }
+    .sch-list { display: flex; flex-direction: column; gap: var(--fs-s-2); }
+
+    .sch-item {
+        display: flex; align-items: center; gap: var(--fs-s-4);
+        padding: var(--fs-s-3) var(--fs-s-4);
+        background: white; border: 1px solid var(--fs-border); border-radius: var(--fs-r-md);
+        border-right-width: 4px;
+    }
+    .sch-item.kind-live { border-right-color: var(--fs-primary); }
+    .sch-item.kind-ass { border-right-color: var(--fs-accent); }
+    .sch-item.now { box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.4); animation: pulseRed 2s infinite; }
+    @@keyframes pulseRed {
+        0%, 100% { box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.4); }
+        50% { box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.15); }
+    }
+
+    .sch-time { display: flex; flex-direction: column; min-width: 64px; align-items: center; padding-left: var(--fs-s-3); border-left: 1px dashed var(--fs-border); }
+    .sch-time strong { font-size: 18px; font-family: monospace; direction: ltr; color: var(--fs-primary); }
+    .sch-time small { font-size: 11px; color: var(--fs-text-muted); }
+    .sch-info { flex: 1; min-width: 0; }
+    .sch-info h4 { margin: 4px 0 2px; font-size: 16px; }
+    .sch-pills { display: flex; gap: 4px; flex-wrap: wrap; }
+    .sch-pill { background: var(--fs-bg); color: var(--fs-text-muted); padding: 2px 8px; border-radius: var(--fs-r-full); font-size: 11px; }
+    .sch-pill.subj { color: var(--fs-primary); }
+    .sch-pill.live-pill { background: #FEE2E2; color: #991B1B; font-weight: 700; }
+    .sch-actions { flex-shrink: 0; }
+</style>
+
+@code {
+    private FSEdu.Shared.Contracts.Courses.StudentScheduleResponse? _data;
+    private bool _loaded;
+    private int _days = 14;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            if (Auth.CurrentUser is null)
+            {
+                Nav.NavigateTo("/login");
+                return;
+            }
+            await Load();
+        }
+    }
+
+    private async Task Load()
+    {
+        _data = await Api.GetMyScheduleAsync(_days);
+        _loaded = true;
+        StateHasChanged();
+    }
+
+    private async Task SetDays(int days)
+    {
+        if (_days == days) return;
+        _days = days;
+        _loaded = false;
+        StateHasChanged();
+        await Load();
+    }
+
+    private static string DayLabel(DateTime localDate)
+    {
+        var today = DateTime.Now.Date;
+        if (localDate == today) return "اليوم";
+        if (localDate == today.AddDays(1)) return "غدًا";
+        if (localDate == today.AddDays(-1)) return "أمس";
+        return localDate.ToString("dddd", new System.Globalization.CultureInfo("ar-EG"));
+    }
+}

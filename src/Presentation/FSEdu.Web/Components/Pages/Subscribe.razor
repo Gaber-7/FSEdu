@@ -1,0 +1,480 @@
+@page "/subscribe"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject NavigationManager Nav
+
+<PageTitle>الاشتراك — FSEdu</PageTitle>
+
+<div class="subscribe-page">
+    <div class="fs-container">
+        <div class="sub-head">
+            <h1>💳 إتمام الاشتراك</h1>
+            <p class="fs-text-muted">ادفع عبر الطريقة المفضّلة ثم ارفع صورة الإيصال</p>
+        </div>
+
+        @if (!Auth.IsAuthenticated)
+        {
+            <div class="fs-alert fs-alert-error">يجب تسجيل الدخول. <a href="/login">تسجيل الدخول</a></div>
+            return;
+        }
+
+        <div class="flow">
+            <div class="step-card fs-card">
+                <div class="step-num">1</div>
+                <div>
+                    <h3>اختر طريقة الدفع</h3>
+                    <div class="methods">
+                        <label class="method @(_method == "InstaPay" ? "selected" : "")">
+                            <input type="radio" name="method" value="InstaPay"
+                                   checked="@(_method == "InstaPay")"
+                                   @onchange='() => _method = "InstaPay"' />
+                            <div class="method-icon">🏦</div>
+                            <div>
+                                <strong>إنستا باي — InstaPay</strong>
+                                <small>تحويل فوري من تطبيق البنك</small>
+                            </div>
+                        </label>
+
+                        <label class="method @(_method == "VodafoneCash" ? "selected" : "")">
+                            <input type="radio" name="method" value="VodafoneCash"
+                                   checked="@(_method == "VodafoneCash")"
+                                   @onchange='() => _method = "VodafoneCash"' />
+                            <div class="method-icon">📱</div>
+                            <div>
+                                <strong>فودافون كاش — Vodafone Cash</strong>
+                                <small>تحويل من محفظة فودافون</small>
+                            </div>
+                        </label>
+
+                        <label class="method @(_method == "BankTransfer" ? "selected" : "")">
+                            <input type="radio" name="method" value="BankTransfer"
+                                   checked="@(_method == "BankTransfer")"
+                                   @onchange='() => _method = "BankTransfer"' />
+                            <div class="method-icon">🏛️</div>
+                            <div>
+                                <strong>تحويل بنكي</strong>
+                                <small>تحويل من أي بنك آخر</small>
+                            </div>
+                        </label>
+
+                        <label class="method @(_method == "Cash" ? "selected" : "")">
+                            <input type="radio" name="method" value="Cash"
+                                   checked="@(_method == "Cash")"
+                                   @onchange='() => _method = "Cash"' />
+                            <div class="method-icon">💵</div>
+                            <div>
+                                <strong>دفع نقدي في المركز</strong>
+                                <small>ادفع للموظف عند الاستلام</small>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            @if (_method == "Cash")
+            {
+                <div class="step-card fs-card info-card">
+                    <div class="step-num">2</div>
+                    <div>
+                        <h3>تعليمات الدفع النقدي</h3>
+                        <div class="cash-instr">
+                            <p>سيتم تفعيل اشتراكك بعد دفع المبلغ نقدًا في المركز:</p>
+                            <ol>
+                                <li>توجّه للمركز التعليمي في ساعات العمل</li>
+                                <li>ادفع المبلغ المطلوب للموظف</li>
+                                <li>اذكر اسمك ورقم جوّالك المُسجَّل</li>
+                                <li>أنشئ الطلب من هنا — الإدارة ستربط دفعتك بالطلب وتُفعّله</li>
+                            </ol>
+                            <small class="fs-text-muted">لا تحتاج لرفع إيصال — الإدارة تستلم النقد وتُفعّل اشتراكك مباشرة.</small>
+                        </div>
+                    </div>
+                </div>
+            }
+            else if (_instructions is not null)
+            {
+                <div class="step-card fs-card info-card">
+                    <div class="step-num">2</div>
+                    <div>
+                        <h3>حوّل المبلغ إلى</h3>
+                        @if (_method == "InstaPay")
+                        {
+                            <div class="account-info">
+                                <div class="info-row"><span>الرقم:</span><strong class="copy-target">@_instructions.InstaPayNumber</strong></div>
+                                <div class="info-row"><span>رابط مباشر:</span><a href="@_instructions.InstaPayLink" target="_blank">@_instructions.InstaPayLink</a></div>
+                                <div class="info-row"><span>المستفيد:</span><strong>@_instructions.AccountHolder</strong></div>
+                            </div>
+                        }
+                        else if (_method == "VodafoneCash")
+                        {
+                            <div class="account-info">
+                                <div class="info-row"><span>الرقم:</span><strong class="copy-target">@_instructions.VodafoneCashNumber</strong></div>
+                                <div class="info-row"><span>المستفيد:</span><strong>@_instructions.AccountHolder</strong></div>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="account-info">
+                                <div class="info-row"><span>البنك:</span><strong>@_instructions.BankName</strong></div>
+                                <div class="info-row"><span>رقم الحساب:</span><strong class="copy-target">@_instructions.BankAccount</strong></div>
+                                <div class="info-row"><span>IBAN:</span><strong class="copy-target">@_instructions.BankIban</strong></div>
+                                <div class="info-row"><span>المستفيد:</span><strong>@_instructions.AccountHolder</strong></div>
+                            </div>
+                        }
+
+                        <div class="fs-alert fs-alert-info" style="margin-top:var(--fs-s-3)">
+                            <span>💡</span>
+                            <div>
+                                <strong>خطوات التحويل:</strong>
+                                <ol style="margin:var(--fs-s-2) 0 0 var(--fs-s-5); padding:0; font-size:14px; line-height:1.8">
+                                    <li>افتح تطبيق البنك/المحفظة</li>
+                                    <li>حوّل المبلغ المطلوب إلى الرقم أعلاه</li>
+                                    <li>احفظ رقم العملية/الإيصال</li>
+                                    <li>ارجع هنا وأكمل الخطوات التالية</li>
+                                </ol>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+
+            <div class="step-card fs-card">
+                <div class="step-num">3</div>
+                <div>
+                    <h3>أكمل بيانات الدفع</h3>
+
+                    @if (_method != "Cash")
+                    {
+                        <div class="fs-form-group">
+                            <label class="fs-label">رقم العملية / المرجع <span style="color:var(--fs-danger)">*</span></label>
+                            <input class="fs-input fs-input-phone" @bind="_referenceNumber" placeholder="مثال: TXN123456789" />
+                            <small class="fs-text-subtle">الرقم الذي ظهر لك بعد إتمام التحويل</small>
+                        </div>
+                    }
+
+                    <div class="fs-form-group">
+                        <label class="fs-label">اسم المُرسِل (اختياري)</label>
+                        <input class="fs-input" @bind="_senderName" placeholder="@(_method == "Cash" ? "اسم المستلم في المركز إن أمكن" : "الاسم الذي تم التحويل منه")" />
+                    </div>
+
+                    @if (_method != "Cash")
+                    {
+                    <div class="fs-form-group">
+                        <label class="fs-label">صورة الإيصال</label>
+                        <InputFile OnChange="OnFileSelected" accept="image/*,.pdf" class="fs-file-input" />
+                        @if (_uploading)
+                        {
+                            <div style="margin-top:var(--fs-s-2);display:flex;align-items:center;gap:var(--fs-s-2)">
+                                <span class="fs-spinner"></span>
+                                <small>جارٍ الرفع...</small>
+                            </div>
+                        }
+                        @if (!string.IsNullOrEmpty(_receiptUrl))
+                        {
+                            <div class="receipt-preview">
+                                ✓ تم رفع الإيصال بنجاح
+                                <a href="@(_apiBase + _receiptUrl)" target="_blank">معاينة</a>
+                            </div>
+                        }
+                        <small class="fs-text-subtle">صيغ مقبولة: JPG, PNG, PDF — حد أقصى 5 ميجابايت</small>
+                    </div>
+                    }
+
+                    <div class="fs-form-group">
+                        <label class="fs-label">ملاحظات (اختياري)</label>
+                        <textarea class="fs-input" rows="2" @bind="_notes"
+                                  placeholder="أي ملاحظات إضافية..."></textarea>
+                    </div>
+
+                    @if (_amount > 0)
+                    {
+                        <div class="fs-form-group coupon-group">
+                            <label class="fs-label">🏷️ كود خصم (اختياري)</label>
+                            <div class="coupon-row">
+                                <input class="fs-input" @bind="_couponCode"
+                                       placeholder="أدخل الكوبون"
+                                       disabled="@(_couponApplied is { Valid: true })" />
+                                @if (_couponApplied is { Valid: true })
+                                {
+                                    <button class="fs-btn fs-btn-outline fs-btn-sm" @onclick="ClearCoupon">إزالة</button>
+                                }
+                                else
+                                {
+                                    <button class="fs-btn fs-btn-primary fs-btn-sm" @onclick="ApplyCoupon"
+                                            disabled="@(_validatingCoupon || string.IsNullOrWhiteSpace(_couponCode))">
+                                        @(_validatingCoupon ? "..." : "تطبيق")
+                                    </button>
+                                }
+                            </div>
+                            @if (_couponApplied is not null)
+                            {
+                                <div class="@(_couponApplied.Valid ? "fs-alert fs-alert-success" : "fs-alert fs-alert-error")" style="margin-top:var(--fs-s-2)">
+                                    @_couponApplied.Message
+                                </div>
+                            }
+                            <div class="price-summary">
+                                <div class="ps-row"><span>السعر الأصلي</span><strong>@_amount.ToString("0.##") جنيه</strong></div>
+                                @if (_couponApplied is { Valid: true } ca)
+                                {
+                                    <div class="ps-row"><span>الخصم</span><strong style="color:var(--fs-success)">- @ca.Discount.ToString("0.##") جنيه</strong></div>
+                                    <div class="ps-row final"><span>المبلغ النهائي</span><strong>@ca.FinalAmount.ToString("0.##") جنيه</strong></div>
+                                }
+                                else
+                                {
+                                    <div class="ps-row final"><span>المبلغ المستحق</span><strong>@_amount.ToString("0.##") جنيه</strong></div>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <div class="fs-alert fs-alert-error"><span>⚠️</span><span>@_error</span></div>
+        }
+
+        @if (_success)
+        {
+            <div class="fs-alert fs-alert-success">
+                <span>✅</span>
+                <div>
+                    <strong>تم استلام طلب الاشتراك بنجاح!</strong>
+                    <p style="margin:4px 0 0; font-size:14px">
+                        سيقوم الفريق الإداري بمراجعة التحويل وتفعيل اشتراكك خلال 24 ساعة.
+                        ستتلقّى إشعارًا فور التفعيل.
+                    </p>
+                </div>
+            </div>
+        }
+
+        <div class="submit-bar">
+            <a href="/pricing" class="fs-btn fs-btn-outline">← رجوع</a>
+            <button class="fs-btn fs-btn-primary fs-btn-lg" @onclick="Submit"
+                    disabled="@(_submitting || (_method != "Cash" && string.IsNullOrWhiteSpace(_referenceNumber)))">
+                @if (_submitting) { <span class="fs-spinner"></span><span>جارٍ الإرسال...</span> }
+                else { <span>📤 إرسال طلب الاشتراك</span> }
+            </button>
+        </div>
+    </div>
+</div>
+
+<style>
+    .subscribe-page { padding: var(--fs-s-10) 0; min-height: calc(100vh - 72px); background: var(--fs-bg); }
+    .sub-head { text-align: center; margin-bottom: var(--fs-s-8); }
+    .sub-head h1 { font-size: clamp(1.75rem, 3vw, 2.5rem); }
+
+    .flow { display: flex; flex-direction: column; gap: var(--fs-s-4); max-width: 720px; margin: 0 auto; }
+
+    .step-card { display: flex; gap: var(--fs-s-4); padding: var(--fs-s-5); }
+    .step-card > div:last-child { flex: 1; }
+    .step-num {
+        width: 36px; height: 36px; border-radius: 50%;
+        background: var(--fs-primary); color: white;
+        display: flex; align-items: center; justify-content: center;
+        font-weight: 800; font-size: 16px; flex-shrink: 0;
+    }
+    .step-card h3 { margin: 0 0 var(--fs-s-3); font-size: 18px; }
+
+    .methods { display: flex; flex-direction: column; gap: var(--fs-s-2); }
+    .method {
+        display: flex; align-items: center; gap: var(--fs-s-3);
+        padding: var(--fs-s-3) var(--fs-s-4);
+        background: var(--fs-bg); border: 2px solid var(--fs-border);
+        border-radius: var(--fs-r-md); cursor: pointer;
+        transition: all var(--fs-trans);
+    }
+    .method:hover { border-color: var(--fs-primary); }
+    .method.selected { border-color: var(--fs-primary); background: var(--fs-primary-soft); }
+    .method input[type="radio"] { width: 20px; height: 20px; }
+    .method-icon { font-size: 32px; }
+    .method strong { display: block; font-size: 14px; }
+    .method small { font-size: 12px; color: var(--fs-text-muted); }
+
+    .info-card { background: linear-gradient(135deg, var(--fs-accent-soft), var(--fs-secondary-soft)); }
+    .account-info { background: var(--fs-surface); padding: var(--fs-s-4); border-radius: var(--fs-r-md); }
+    .info-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px dashed var(--fs-border); font-size: 14px; }
+    .info-row:last-child { border-bottom: none; }
+    .info-row span { color: var(--fs-text-muted); }
+    .copy-target { font-family: monospace; font-size: 15px; direction: ltr; }
+
+    .receipt-preview {
+        margin-top: var(--fs-s-2); padding: var(--fs-s-2) var(--fs-s-3);
+        background: #D1FAE5; color: var(--fs-success);
+        border-radius: var(--fs-r-sm); font-size: 13px;
+        display: flex; justify-content: space-between; align-items: center;
+    }
+    .receipt-preview a { color: var(--fs-success); font-weight: 700; text-decoration: underline; }
+
+    .fs-file-input {
+        display: block; width: 100%; padding: var(--fs-s-3);
+        border: 2px dashed var(--fs-border); border-radius: var(--fs-r-md);
+        background: var(--fs-bg); cursor: pointer;
+        font-family: var(--fs-font-body);
+    }
+
+    .submit-bar { display: flex; gap: var(--fs-s-3); justify-content: center; margin-top: var(--fs-s-6); max-width: 720px; margin-left: auto; margin-right: auto; }
+    .submit-bar .fs-btn:last-child { flex: 1; }
+
+    .cash-instr ol { margin: var(--fs-s-2) 0; padding-right: var(--fs-s-5); }
+    .cash-instr li { margin: 4px 0; line-height: 1.7; }
+
+    .coupon-group { padding: var(--fs-s-3); background: var(--fs-bg); border-radius: var(--fs-r-md); margin-top: var(--fs-s-3); }
+    .coupon-row { display: flex; gap: var(--fs-s-2); align-items: stretch; }
+    .coupon-row .fs-input { flex: 1; }
+    .price-summary { margin-top: var(--fs-s-3); padding-top: var(--fs-s-3); border-top: 1px dashed var(--fs-border); display: flex; flex-direction: column; gap: 4px; }
+    .ps-row { display: flex; justify-content: space-between; font-size: 14px; }
+    .ps-row.final { font-size: 16px; padding-top: var(--fs-s-2); border-top: 1px solid var(--fs-border); margin-top: 4px; }
+    .ps-row.final strong { color: var(--fs-primary); font-size: 18px; }
+</style>
+
+@code {
+    // Query params
+    [SupplyParameterFromQuery] public string? Type { get; set; }
+    [SupplyParameterFromQuery] public int? SubjectId { get; set; }
+    [SupplyParameterFromQuery] public int? StageId { get; set; }
+    [SupplyParameterFromQuery] public string? Term { get; set; }
+
+    private FSEdu.Shared.Contracts.Payments.PaymentInstructionsDto? _instructions;
+    private string _method = "InstaPay";
+    private string _referenceNumber = "";
+    private string _senderName = "";
+    private string _notes = "";
+    private string _receiptUrl = "";
+    private bool _uploading;
+    private bool _submitting;
+    private bool _success;
+    private string? _error;
+    private string _apiBase = "";
+
+    // Pricing + coupon
+    private decimal _amount;
+    private string _couponCode = "";
+    private bool _validatingCoupon;
+    private FSEdu.Shared.Contracts.Payments.ValidateCouponResponse? _couponApplied;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { _instructions = await Api.GetPaymentInstructionsAsync(); }
+        catch { }
+        await LoadAmount();
+    }
+
+    private async Task LoadAmount()
+    {
+        try
+        {
+            var pricing = await Api.GetPricingAsync();
+            if (pricing is null) return;
+
+            switch (Type)
+            {
+                case "SubjectMonthly":
+                {
+                    var sub = pricing.Stages.SelectMany(s => s.Subjects).FirstOrDefault(s => s.SubjectId == SubjectId);
+                    if (sub is not null) _amount = sub.MonthlyPriceEgp;
+                    break;
+                }
+                case "SubjectTerm":
+                {
+                    var sub = pricing.Stages.SelectMany(s => s.Subjects).FirstOrDefault(s => s.SubjectId == SubjectId);
+                    if (sub is not null) _amount = sub.TermPriceEgp;
+                    break;
+                }
+                case "StageFullTerm":
+                {
+                    var stage = pricing.Stages.FirstOrDefault(s => s.StageId == StageId);
+                    if (stage?.FullTermPriceEgp is decimal p) _amount = p;
+                    break;
+                }
+            }
+        }
+        catch { }
+    }
+
+    private async Task ApplyCoupon()
+    {
+        if (string.IsNullOrWhiteSpace(_couponCode) || _amount <= 0) return;
+        _validatingCoupon = true; StateHasChanged();
+        try
+        {
+            _couponApplied = await Api.ValidateCouponAsync(_couponCode.Trim(), _amount);
+            if (_couponApplied is null)
+                _couponApplied = new FSEdu.Shared.Contracts.Payments.ValidateCouponResponse(
+                    false, _couponCode, _amount, 0m, _amount, "تعذّر التحقق من الكوبون");
+        }
+        finally { _validatingCoupon = false; StateHasChanged(); }
+    }
+
+    private void ClearCoupon()
+    {
+        _couponCode = "";
+        _couponApplied = null;
+        StateHasChanged();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnFileSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file is null) return;
+
+        if (file.Size > 5 * 1024 * 1024)
+        { _error = "حجم الملف أكبر من 5 ميجابايت"; return; }
+
+        _error = null;
+        _uploading = true; StateHasChanged();
+        try
+        {
+            using var stream = file.OpenReadStream(5 * 1024 * 1024);
+            var (url, err) = await Api.UploadReceiptAsync(stream, file.Name);
+            if (err is not null) { _error = err.Message; return; }
+            _receiptUrl = url!;
+        }
+        catch (Exception ex) { _error = "فشل الرفع: " + ex.Message; }
+        finally { _uploading = false; StateHasChanged(); }
+    }
+
+    private async Task Submit()
+    {
+        if (_submitting) return;
+        _error = null;
+
+        if (_method != "Cash" && string.IsNullOrWhiteSpace(_referenceNumber))
+        { _error = "رقم العملية مطلوب"; return; }
+
+        if (string.IsNullOrEmpty(Type))
+        { _error = "معلومات الاشتراك ناقصة — ارجع لصفحة الأسعار"; return; }
+
+        _submitting = true; StateHasChanged();
+        try
+        {
+            var req = new FSEdu.Shared.Contracts.Payments.SubscribeWithPaymentRequest(
+                Type!, SubjectId, StageId, Term,
+                _method,
+                string.IsNullOrWhiteSpace(_referenceNumber) ? null : _referenceNumber.Trim(),
+                string.IsNullOrEmpty(_receiptUrl) ? null : _receiptUrl,
+                string.IsNullOrWhiteSpace(_senderName) ? null : _senderName.Trim(),
+                string.IsNullOrWhiteSpace(_notes) ? null : _notes.Trim(),
+                _couponApplied is { Valid: true } ? _couponApplied.Code : null);
+
+            var (data, err) = await Api.SubscribeWithPaymentAsync(req);
+            if (err is not null) { _error = err.Message; return; }
+
+            _success = true; StateHasChanged();
+            await Task.Delay(2500);
+            Nav.NavigateTo("/student/subscriptions");
+        }
+        catch (Exception ex) { _error = "خطأ: " + ex.Message; }
+        finally { _submitting = false; }
+    }
+}

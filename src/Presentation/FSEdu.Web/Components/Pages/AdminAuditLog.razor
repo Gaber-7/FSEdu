@@ -1,0 +1,227 @@
+@page "/admin/audit-log"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject NavigationManager Nav
+
+<PageTitle>سجلّ التدقيق</PageTitle>
+
+<div class="al-page">
+    <div class="fs-container">
+        <header class="al-head">
+            <h1>📋 سجلّ التدقيق</h1>
+            <p class="fs-text-muted">جميع العمليات الإدارية المُنفّذة على المنصّة. مرتّبة من الأحدث للأقدم.</p>
+        </header>
+
+        <div class="al-filters fs-card">
+            <div>
+                <label>نوع العملية</label>
+                <select class="al-input" @bind="_action" @bind:after="LoadFirst">
+                    <option value="">— الكل —</option>
+                    <option value="admin.broadcast">📣 بثّ إشعار</option>
+                    <option value="coupon.create">🏷️ إنشاء كوبون</option>
+                    <option value="campaign.create">🎉 إنشاء حملة خصم</option>
+                    <option value="teacher.approve">👨‍🏫 اعتماد مدرّس</option>
+                    <option value="teacher.reject">❌ رفض مدرّس</option>
+                    <option value="payment.approve">✅ اعتماد دفعة</option>
+                    <option value="payment.reject">⛔ رفض دفعة</option>
+                </select>
+            </div>
+            <div>
+                <label>من تاريخ</label>
+                <input type="date" class="al-input" @bind="_fromDate" />
+            </div>
+            <div>
+                <label>إلى تاريخ</label>
+                <input type="date" class="al-input" @bind="_toDate" />
+            </div>
+            <div class="al-actions">
+                <button class="fs-btn fs-btn-primary fs-btn-sm" @onclick="LoadFirst">🔍 تطبيق</button>
+                <button class="fs-btn fs-btn-outline fs-btn-sm" @onclick="ClearFilters">إعادة تعيين</button>
+            </div>
+        </div>
+
+        @if (!_loaded)
+        {
+            <div class="fs-center" style="padding:80px"><span class="fs-spinner"></span></div>
+        }
+        else if (_data is null || _data.Items.Count == 0)
+        {
+            <div class="fs-card empty">
+                <div style="font-size:64px">🗂️</div>
+                <h3>لا توجد سجلّات تطابق الفلتر</h3>
+            </div>
+        }
+        else
+        {
+            <p class="fs-text-muted al-count">@_data.TotalCount سجل بإجمالي · صفحة @_page من @TotalPages</p>
+
+            <div class="al-list">
+                @foreach (var e in _data.Items)
+                {
+                    <article class="al-row fs-card">
+                        <span class="al-emoji">@ActionIcon(e.Action)</span>
+                        <div class="al-info">
+                            <strong>@ActionLabel(e.Action)</strong>
+                            <small>
+                                <span class="al-actor">@e.ActorName</span>
+                                <span class="al-role">(@RoleLabel(e.ActorRole))</span>
+                                @if (!string.IsNullOrEmpty(e.EntityType))
+                                {
+                                    <text> · @e.EntityType</text>
+                                    @if (!string.IsNullOrEmpty(e.EntityId))
+                                    { <text> #@e.EntityId.Substring(0, Math.Min(8, e.EntityId.Length))</text> }
+                                }
+                            </small>
+                            @if (!string.IsNullOrEmpty(e.DetailsJson))
+                            {
+                                <details class="al-details">
+                                    <summary>التفاصيل</summary>
+                                    <pre>@e.DetailsJson</pre>
+                                </details>
+                            }
+                        </div>
+                        <div class="al-time">
+                            <strong>@e.AtUtc.ToLocalTime().ToString("HH:mm")</strong>
+                            <small>@e.AtUtc.ToLocalTime().ToString("yyyy/MM/dd")</small>
+                            @if (!string.IsNullOrEmpty(e.IpAddress))
+                            { <small class="al-ip" title="عنوان IP">@e.IpAddress</small> }
+                        </div>
+                    </article>
+                }
+            </div>
+
+            <div class="al-pager">
+                <button class="fs-btn fs-btn-outline fs-btn-sm" @onclick="PrevPage" disabled="@(_page <= 1)">← السابق</button>
+                <span>@_page / @TotalPages</span>
+                <button class="fs-btn fs-btn-outline fs-btn-sm" @onclick="NextPage" disabled="@(_page >= TotalPages)">التالي →</button>
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .al-page { padding: var(--fs-s-8) 0; min-height: calc(100vh - 72px); }
+    .al-head { margin-bottom: var(--fs-s-4); }
+    .al-head h1 { margin: 0 0 var(--fs-s-1); font-size: 24px; }
+
+    .al-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: var(--fs-s-3); padding: var(--fs-s-3); margin-bottom: var(--fs-s-4); align-items: end; }
+    .al-filters label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--fs-text-muted); }
+    .al-input { width: 100%; padding: var(--fs-s-2) var(--fs-s-3); border: 1px solid var(--fs-border); border-radius: var(--fs-r-md); font-size: 13px; font-family: inherit; }
+    .al-input:focus { outline: none; border-color: var(--fs-primary); }
+    .al-actions { display: flex; gap: var(--fs-s-2); flex-wrap: wrap; }
+
+    .empty { padding: 60px; text-align: center; }
+    .empty h3 { margin: var(--fs-s-3) 0 0; }
+
+    .al-count { margin-bottom: var(--fs-s-2); }
+    .al-list { display: flex; flex-direction: column; gap: var(--fs-s-2); }
+    .al-row { display: grid; grid-template-columns: 56px 1fr 130px; gap: var(--fs-s-3); align-items: center; padding: var(--fs-s-3) var(--fs-s-4); }
+    .al-emoji {
+        width: 44px; height: 44px; border-radius: 50%;
+        background: var(--fs-primary-soft); display: flex; align-items: center; justify-content: center;
+        font-size: 20px; flex-shrink: 0;
+    }
+    .al-info strong { display: block; font-size: 14px; }
+    .al-info small { font-size: 12px; color: var(--fs-text-muted); }
+    .al-actor { color: var(--fs-text); font-weight: 600; }
+    .al-role { color: var(--fs-text-muted); }
+    .al-details { margin-top: var(--fs-s-2); font-size: 12px; }
+    .al-details summary { cursor: pointer; color: var(--fs-primary); }
+    .al-details pre { margin: 4px 0 0; padding: var(--fs-s-2); background: var(--fs-bg); border-radius: var(--fs-r-sm); white-space: pre-wrap; word-break: break-all; font-family: monospace; direction: ltr; max-height: 200px; overflow: auto; }
+    .al-time { text-align: end; }
+    .al-time strong { display: block; font-size: 14px; font-family: monospace; direction: ltr; }
+    .al-time small { display: block; font-size: 11px; color: var(--fs-text-muted); }
+    .al-time .al-ip { font-family: monospace; direction: ltr; color: var(--fs-text-subtle); }
+
+    .al-pager { display: flex; justify-content: center; align-items: center; gap: var(--fs-s-3); margin-top: var(--fs-s-4); }
+
+    @@media (max-width: 700px) {
+        .al-row { grid-template-columns: 44px 1fr; }
+        .al-time { grid-column: 1 / -1; text-align: start; }
+    }
+</style>
+
+@code {
+    private FSEdu.Shared.Contracts.Admin.AuditLogResponse? _data;
+    private bool _loaded;
+    private string _action = "";
+    private DateTime? _fromDate;
+    private DateTime? _toDate;
+    private int _page = 1;
+    private const int PageSize = 50;
+
+    private int TotalPages =>
+        (int)Math.Ceiling((double)(_data?.TotalCount ?? 0) / PageSize);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            if (Auth.CurrentUser is null || !Auth.IsInRole("Admin"))
+            {
+                Nav.NavigateTo("/login");
+                return;
+            }
+            await Load();
+        }
+    }
+
+    private async Task Load()
+    {
+        _data = await Api.GetAuditLogAsync(
+            string.IsNullOrEmpty(_action) ? null : _action,
+            null,
+            _fromDate?.ToUniversalTime(),
+            _toDate?.AddDays(1).ToUniversalTime(),
+            _page, PageSize);
+        _loaded = true;
+        StateHasChanged();
+    }
+
+    private async Task LoadFirst() { _page = 1; await Load(); }
+    private async Task PrevPage() { if (_page > 1) { _page--; await Load(); } }
+    private async Task NextPage() { if (_page < TotalPages) { _page++; await Load(); } }
+
+    private async Task ClearFilters()
+    {
+        _action = "";
+        _fromDate = null;
+        _toDate = null;
+        _page = 1;
+        await Load();
+    }
+
+    private static string ActionIcon(string a) => a switch
+    {
+        "admin.broadcast" => "📣",
+        "coupon.create" => "🏷️",
+        "campaign.create" => "🎉",
+        "teacher.approve" => "✅",
+        "teacher.reject" => "❌",
+        "payment.approve" => "✓",
+        "payment.reject" => "⛔",
+        _ => "📋"
+    };
+
+    private static string ActionLabel(string a) => a switch
+    {
+        "admin.broadcast" => "بثّ إشعار جماعي",
+        "coupon.create" => "إنشاء كوبون خصم",
+        "campaign.create" => "إنشاء حملة خصم",
+        "teacher.approve" => "اعتماد مدرّس",
+        "teacher.reject" => "رفض مدرّس",
+        "payment.approve" => "اعتماد دفعة",
+        "payment.reject" => "رفض دفعة",
+        _ => a
+    };
+
+    private static string RoleLabel(string r) => r switch
+    {
+        "Admin" => "مشرف إداري",
+        "Teacher" => "مدرّس",
+        "Supervisor" => "مشرف أكاديمي",
+        _ => r
+    };
+}

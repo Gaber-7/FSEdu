@@ -1,0 +1,165 @@
+@page "/my/homework"
+@using FSEdu.Shared.Contracts.Courses
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject NavigationManager Nav
+@rendermode InteractiveServer
+
+<PageTitle>واجباتى - FSEdu</PageTitle>
+
+<div class="hw-page fs-container">
+    <div class="page-head">
+        <h1>📝 واجباتى</h1>
+        <p class="fs-text-muted">كل الواجبات من دوراتك المُسجَّلة، مرتّبة حسب أقرب موعد تسليم</p>
+    </div>
+
+    @if (!_loaded)
+    {
+        <div class="fs-loading"><span class="fs-spinner"></span></div>
+    }
+    else
+    {
+        <div class="kpi-row">
+            <div class="kpi"><span class="kpi-val">@_pending</span><span class="kpi-lbl">معلّق</span></div>
+            <div class="kpi"><span class="kpi-val">@_submitted</span><span class="kpi-lbl">مُسلَّم</span></div>
+            <div class="kpi"><span class="kpi-val">@_graded</span><span class="kpi-lbl">تم التصحيح</span></div>
+            <div class="kpi kpi-warn"><span class="kpi-val">@_overdue</span><span class="kpi-lbl">متأخّر</span></div>
+        </div>
+
+        @if (_rows.Count == 0)
+        {
+            <div class="empty">
+                <div class="empty-icon">🎉</div>
+                <h3>لا توجد واجبات حاليًا</h3>
+                <p>عندما يضيف معلّمك واجبًا جديدًا ستجده هنا.</p>
+            </div>
+        }
+        else
+        {
+            <div class="hw-list">
+                @foreach (var h in _rows)
+                {
+                    <a href="@($"/my/homework/{h.HomeworkId}")" class="hw-row" style="--accent: @(h.SubjectColor ?? "#6366f1")">
+                        <div class="hw-status">
+                            <span class="status-badge @StatusClass(h.Status)">@StatusLabel(h.Status)</span>
+                        </div>
+                        <div class="hw-body">
+                            <div class="hw-title">@h.Title</div>
+                            <small class="fs-text-muted">@h.CourseTitle</small>
+                        </div>
+                        <div class="hw-meta">
+                            <div class="due">
+                                <small>تسليم</small>
+                                <strong>@h.DueDateUtc.ToLocalTime().ToString("yyyy/MM/dd HH:mm")</strong>
+                            </div>
+                            @if (h.Score.HasValue)
+                            {
+                                <div class="score">
+                                    <small>الدرجة</small>
+                                    <strong>@h.Score / @h.MaxScore</strong>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="max">
+                                    <small>من</small>
+                                    <strong>@h.MaxScore</strong>
+                                </div>
+                            }
+                        </div>
+                    </a>
+                }
+            </div>
+        }
+    }
+</div>
+
+<style>
+    .hw-page { min-height: calc(100vh - 72px); padding: var(--fs-s-8) 0; }
+    .page-head h1 { margin: 0 0 var(--fs-s-2); }
+    .page-head { margin-bottom: var(--fs-s-5); }
+
+    .kpi-row {
+        display: grid; grid-template-columns: repeat(4, 1fr);
+        gap: var(--fs-s-3); margin-bottom: var(--fs-s-5);
+    }
+    @@media (max-width: 600px) { .kpi-row { grid-template-columns: repeat(2, 1fr); } }
+    .kpi {
+        background: white; border: 1px solid var(--fs-border);
+        border-radius: var(--fs-r-lg); padding: var(--fs-s-3) var(--fs-s-4);
+        display: flex; flex-direction: column; align-items: center;
+    }
+    .kpi-val { font-size: 26px; font-weight: 800; color: var(--fs-primary); }
+    .kpi-lbl { font-size: 12px; color: var(--fs-text-muted); }
+    .kpi-warn .kpi-val { color: #DC2626; }
+
+    .empty { text-align: center; padding: var(--fs-s-12); background: white; border-radius: var(--fs-r-xl); border: 1px solid var(--fs-border); }
+    .empty-icon { font-size: 64px; }
+
+    .hw-list { display: flex; flex-direction: column; gap: var(--fs-s-3); }
+    .hw-row {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        gap: var(--fs-s-4);
+        align-items: center;
+        background: white; border: 1px solid var(--fs-border);
+        border-right: 4px solid var(--accent);
+        border-radius: var(--fs-r-lg); padding: var(--fs-s-4);
+        text-decoration: none; color: inherit;
+        transition: all var(--fs-trans);
+    }
+    .hw-row:hover { transform: translateX(-3px); box-shadow: 0 8px 20px rgba(0,0,0,0.06); }
+    @@media (max-width: 700px) {
+        .hw-row { grid-template-columns: 1fr; }
+        .hw-meta { display: flex; gap: var(--fs-s-4); }
+    }
+
+    .status-badge {
+        display: inline-block;
+        padding: 5px 12px;
+        border-radius: var(--fs-r-full);
+        font-size: 12px; font-weight: 700;
+        white-space: nowrap;
+    }
+    .status-pending { background: #FEF3C7; color: #92400E; }
+    .status-submitted { background: #DBEAFE; color: #1E40AF; }
+    .status-late { background: #FFE4E6; color: #BE123C; }
+    .status-graded { background: #DCFCE7; color: #15803D; }
+    .status-overdue { background: #FEE2E2; color: #B91C1C; }
+
+    .hw-title { font-weight: 700; font-size: 16px; margin-bottom: 2px; }
+
+    .hw-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; text-align: left; }
+    .hw-meta small { font-size: 11px; color: var(--fs-text-muted); display: block; }
+    .hw-meta strong { font-size: 14px; }
+    .score strong { color: var(--fs-primary); }
+</style>
+
+@code {
+    private List<StudentHomeworkRowDto> _rows = new();
+    private bool _loaded;
+    private int _pending => _rows.Count(r => r.Status == "Pending");
+    private int _submitted => _rows.Count(r => r.Status == "Submitted" || r.Status == "Late");
+    private int _graded => _rows.Count(r => r.Status == "Graded");
+    private int _overdue => _rows.Count(r => r.Status == "Overdue");
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        await Auth.RestoreAsync();
+        if (!Auth.IsInRole("Student")) { Nav.NavigateTo("/login"); return; }
+        _rows = await Api.ListMyHomeworkAsync();
+        _loaded = true; StateHasChanged();
+    }
+
+    private static string StatusClass(string s) => "status-" + s.ToLowerInvariant();
+    private static string StatusLabel(string s) => s switch
+    {
+        "Pending" => "📌 معلّق",
+        "Submitted" => "✓ مُسلَّم",
+        "Late" => "⏰ سُلّم متأخّرًا",
+        "Graded" => "🎯 مُصحّح",
+        "Overdue" => "⚠️ متأخّر",
+        _ => s
+    };
+}

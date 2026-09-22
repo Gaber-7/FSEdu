@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="9.0.0" />
+    <ProjectReference Include="..\FSEdu.Web.Client\FSEdu.Web.Client.csproj" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="9.0.9" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\FSEdu.Web.Shared\FSEdu.Web.Shared.csproj" />
+    <ProjectReference Include="..\..\BuildingBlocks\FSEdu.Shared.Contracts\FSEdu.Shared.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>

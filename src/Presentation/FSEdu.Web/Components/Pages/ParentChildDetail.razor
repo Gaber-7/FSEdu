@@ -1,0 +1,322 @@
+@page "/parent/child/{StudentId:guid}"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject NavigationManager Nav
+@inject IConfiguration Config
+
+<PageTitle>@(_data?.FullName ?? "ابني")</PageTitle>
+
+<div class="pc-page">
+    <div class="fs-container">
+        @if (!_loaded)
+        {
+            <div class="fs-center" style="padding:80px"><span class="fs-spinner"></span></div>
+        }
+        else if (_data is null)
+        {
+            <div class="fs-card empty">
+                <div style="font-size:64px">🤷</div>
+                <h3>الطالب غير موجود أو غير مرتبط بحسابك</h3>
+                <a href="/parent/children" class="fs-btn fs-btn-outline">رجوع</a>
+            </div>
+        }
+        else
+        {
+            <a href="/parent/children" class="pc-back">← كل أبنائي</a>
+
+            <header class="pc-hero fs-card">
+                <div class="pc-avatar">
+                    @if (!string.IsNullOrEmpty(_data.AvatarUrl))
+                    {
+                        <img src="@AvatarFullUrl(_data.AvatarUrl)" alt="" />
+                    }
+                    else
+                    {
+                        <span>@_data.FullName.FirstOrDefault()</span>
+                    }
+                </div>
+                <div class="pc-info">
+                    <h1>@_data.FullName</h1>
+                    <div class="pc-meta">
+                        <span>📚 @_data.StageName</span>
+                        <span>·</span>
+                        <span>🌍 @_data.RegionName</span>
+                        <span>·</span>
+                        <span style="direction:ltr">@_data.Phone</span>
+                    </div>
+                </div>
+                <div class="pc-streak">
+                    <strong>🔥 @_data.CurrentStreak</strong>
+                    <small>يوم متواصل</small>
+                </div>
+            </header>
+
+            <div class="pc-stats fs-grid fs-grid-4">
+                <div class="pc-stat-card fs-card">
+                    <span class="pc-stat-icon">⭐</span>
+                    <strong>@_data.XpPoints</strong>
+                    <small>نقطة XP</small>
+                </div>
+                <div class="pc-stat-card fs-card">
+                    <span class="pc-stat-icon">🏆</span>
+                    <strong>@_data.BadgesCount</strong>
+                    <small>شارة</small>
+                </div>
+                <div class="pc-stat-card fs-card">
+                    <span class="pc-stat-icon">📊</span>
+                    <strong>#@_data.GlobalRank</strong>
+                    <small>الترتيب العام</small>
+                </div>
+                <div class="pc-stat-card fs-card">
+                    <span class="pc-stat-icon">🎯</span>
+                    <strong>@_data.LongestStreak</strong>
+                    <small>أطول سلسلة</small>
+                </div>
+            </div>
+
+            <div class="pc-progress fs-card">
+                <h3>📈 التقدّم الدراسي</h3>
+                <div class="pc-prog-grid">
+                    <div><strong>@_data.TotalEnrolledCourses</strong><span>دورة مسجَّل بها</span></div>
+                    <div><strong>@_data.LessonsCompletedTotal</strong><span>درس مُكتمل</span></div>
+                    <div><strong>@_data.LessonsViewedToday</strong><span>درس اليوم</span></div>
+                    <div><strong>@_data.AssessmentsSubmittedTotal</strong><span>اختبار مُقدَّم</span></div>
+                    <div><strong>@_data.AvgAssessmentScore.ToString("0.#")</strong><span>متوسط الدرجات</span></div>
+                </div>
+            </div>
+
+            <div class="fs-grid fs-grid-2 pc-row">
+                <section class="fs-card">
+                    <h3>🎥 آخر الدروس</h3>
+                    @if (_data.RecentLessons.Length == 0)
+                    {
+                        <p class="fs-text-muted">لم يشاهد دروسًا بعد.</p>
+                    }
+                    else
+                    {
+                        <div class="pc-list">
+                            @foreach (var l in _data.RecentLessons)
+                            {
+                                <div class="pc-item">
+                                    <span class="pc-emoji">@(l.Completed ? "✅" : "▶")</span>
+                                    <div>
+                                        <strong>@l.LessonTitle</strong>
+                                        <small>@l.CourseTitle · @((int)l.WatchedPct)% · @FormatTime(l.LastViewedAtUtc)</small>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </section>
+
+                <section class="fs-card">
+                    <h3>📝 آخر الاختبارات</h3>
+                    @if (_data.RecentAttempts.Length == 0)
+                    {
+                        <p class="fs-text-muted">لم يحلّ اختبارات بعد.</p>
+                    }
+                    else
+                    {
+                        <div class="pc-list">
+                            @foreach (var a in _data.RecentAttempts)
+                            {
+                                var pct = a.TotalMarks > 0 ? (int)Math.Round((double)(a.Score / a.TotalMarks * 100)) : 0;
+                                <div class="pc-item">
+                                    <span class="pc-emoji pc-score @ScoreClass(pct)">@pct%</span>
+                                    <div>
+                                        <strong>@a.AssessmentTitle</strong>
+                                        <small>@a.Score / @a.TotalMarks · @FormatTime(a.SubmittedAtUtc)</small>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </section>
+            </div>
+
+            <section class="fs-card">
+                <h3>📅 الحصص القادمة (الأسبوعين القادمين)</h3>
+                @if (_data.UpcomingSessions.Length == 0)
+                {
+                    <p class="fs-text-muted">لا توجد حصص مجدولة في الموادّ المُشترَك بها.</p>
+                }
+                else
+                {
+                    <div class="pc-list">
+                        @foreach (var s in _data.UpcomingSessions)
+                        {
+                            <div class="pc-item">
+                                <span class="pc-emoji">🎥</span>
+                                <div>
+                                    <strong>@s.Title</strong>
+                                    <small>@s.SubjectName · أ/ @s.TeacherName · @s.ScheduledAtUtc.ToLocalTime().ToString("yyyy/MM/dd HH:mm") · @s.DurationMinutes د</small>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </section>
+
+            <section class="fs-card">
+                <h3>💳 الاشتراكات</h3>
+                @if (_data.Subscriptions.Length == 0)
+                {
+                    <p class="fs-text-muted">لا توجد اشتراكات حاليًا.</p>
+                }
+                else
+                {
+                    <div class="pc-subs">
+                        @foreach (var s in _data.Subscriptions)
+                        {
+                            var isActive = s.Status == "Active" && s.EndsAtUtc > DateTime.UtcNow;
+                            <div class="pc-sub @(isActive ? "active" : "expired")">
+                                <div class="pc-sub-top">
+                                    <strong>
+                                        @(s.SubjectName ?? s.StageName ?? s.Type)
+                                    </strong>
+                                    <span class="pc-pill @(isActive ? "ok" : "off")">@StatusLabel(s.Status)</span>
+                                </div>
+                                <small>@s.AmountPaid @s.Currency · من @s.StartsAtUtc.ToLocalTime().ToString("yyyy/MM/dd") إلى @s.EndsAtUtc.ToLocalTime().ToString("yyyy/MM/dd")</small>
+                            </div>
+                        }
+                    </div>
+                }
+            </section>
+        }
+    </div>
+</div>
+
+<style>
+    .pc-page { padding: var(--fs-s-8) 0; min-height: calc(100vh - 72px); }
+    .pc-back { display: inline-block; margin-bottom: var(--fs-s-3); color: var(--fs-text-muted); text-decoration: none; font-size: 14px; }
+    .pc-back:hover { color: var(--fs-primary); }
+
+    .empty { padding: 60px; text-align: center; }
+    .empty h3 { margin: var(--fs-s-3) 0 var(--fs-s-4); }
+
+    .pc-hero {
+        display: flex; align-items: center; gap: var(--fs-s-4);
+        padding: var(--fs-s-5);
+        background: linear-gradient(135deg, var(--fs-primary-soft), var(--fs-surface));
+        margin-bottom: var(--fs-s-4);
+        flex-wrap: wrap;
+    }
+    .pc-avatar {
+        width: 88px; height: 88px; border-radius: 50%;
+        background: linear-gradient(135deg, var(--fs-primary), var(--fs-secondary));
+        color: white; font-weight: 800; font-size: 36px;
+        display: flex; align-items: center; justify-content: center;
+        overflow: hidden; flex-shrink: 0;
+    }
+    .pc-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .pc-info { flex: 1; min-width: 200px; }
+    .pc-info h1 { margin: 0 0 4px; font-size: 24px; }
+    .pc-meta { display: flex; flex-wrap: wrap; gap: var(--fs-s-1); color: var(--fs-text-muted); font-size: 14px; }
+    .pc-streak {
+        text-align: center; padding: var(--fs-s-3) var(--fs-s-4);
+        background: var(--fs-accent-soft); border-radius: var(--fs-r-md);
+        flex-shrink: 0;
+    }
+    .pc-streak strong { display: block; font-size: 22px; font-weight: 800; color: #B56E00; }
+    .pc-streak small { font-size: 11px; color: #92400E; }
+
+    .pc-stats { margin-bottom: var(--fs-s-4); }
+    .pc-stat-card { padding: var(--fs-s-4); text-align: center; }
+    .pc-stat-icon { font-size: 28px; display: block; margin-bottom: var(--fs-s-1); }
+    .pc-stat-card strong { display: block; font-size: 22px; font-weight: 800; color: var(--fs-primary); }
+    .pc-stat-card small { font-size: 12px; color: var(--fs-text-muted); }
+
+    .pc-progress { padding: var(--fs-s-4); margin-bottom: var(--fs-s-4); }
+    .pc-progress h3 { margin: 0 0 var(--fs-s-3); }
+    .pc-prog-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: var(--fs-s-3); }
+    .pc-prog-grid > div { padding: var(--fs-s-3); background: var(--fs-bg); border-radius: var(--fs-r-md); text-align: center; }
+    .pc-prog-grid strong { display: block; font-size: 22px; font-weight: 800; color: var(--fs-primary); }
+    .pc-prog-grid span { font-size: 12px; color: var(--fs-text-muted); }
+
+    .pc-row { margin-bottom: var(--fs-s-4); }
+    .pc-row > section { padding: var(--fs-s-4); }
+    .pc-row h3 { margin: 0 0 var(--fs-s-3); font-size: 16px; }
+
+    .pc-list { display: flex; flex-direction: column; gap: var(--fs-s-2); }
+    .pc-item { display: flex; align-items: center; gap: var(--fs-s-3); padding: var(--fs-s-2); background: var(--fs-bg); border-radius: var(--fs-r-md); }
+    .pc-emoji {
+        width: 40px; height: 40px; border-radius: 50%;
+        background: white; display: flex; align-items: center; justify-content: center;
+        flex-shrink: 0; font-size: 18px;
+    }
+    .pc-emoji.pc-score { font-size: 13px; font-weight: 800; font-family: monospace; }
+    .pc-emoji.pc-score.high { background: #DCFCE7; color: #166534; }
+    .pc-emoji.pc-score.mid { background: #FEF3C7; color: #92400E; }
+    .pc-emoji.pc-score.low { background: #FEE2E2; color: #991B1B; }
+    .pc-item strong { display: block; font-size: 14px; }
+    .pc-item small { display: block; font-size: 12px; color: var(--fs-text-muted); }
+
+    .pc-subs { display: flex; flex-direction: column; gap: var(--fs-s-2); }
+    .pc-sub { padding: var(--fs-s-3); background: var(--fs-bg); border-radius: var(--fs-r-md); border-right: 3px solid var(--fs-border); }
+    .pc-sub.active { border-right-color: var(--fs-success); }
+    .pc-sub.expired { opacity: 0.7; }
+    .pc-sub-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+    .pc-pill { font-size: 11px; padding: 2px 8px; border-radius: var(--fs-r-full); }
+    .pc-pill.ok { background: #DCFCE7; color: #166534; }
+    .pc-pill.off { background: #FEE2E2; color: #991B1B; }
+</style>
+
+@code {
+    [Parameter] public Guid StudentId { get; set; }
+
+    private FSEdu.Shared.Contracts.Dashboard.ChildDetailDto? _data;
+    private bool _loaded;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            if (Auth.CurrentUser is null || (!Auth.IsInRole("Parent") && !Auth.IsInRole("Admin")))
+            {
+                Nav.NavigateTo("/login");
+                return;
+            }
+            _data = await Api.GetChildDetailAsync(StudentId);
+            _loaded = true;
+            StateHasChanged();
+        }
+    }
+
+    private string AvatarFullUrl(string? path)
+    {
+        if (string.IsNullOrEmpty(path)) return "";
+        if (path.StartsWith("http", StringComparison.OrdinalIgnoreCase)) return path;
+        var apiBase = (Config["ApiBaseUrl"] ?? "").TrimEnd('/');
+        return apiBase + path;
+    }
+
+    private static string ScoreClass(int pct) => pct switch
+    {
+        >= 75 => "high",
+        >= 50 => "mid",
+        _ => "low"
+    };
+
+    private static string StatusLabel(string s) => s switch
+    {
+        "Active" => "نشط",
+        "PendingPayment" => "بانتظار الدفع",
+        "Expired" => "منتهٍ",
+        "Cancelled" => "ملغى",
+        "PastDue" => "متأخر",
+        _ => s
+    };
+
+    private static string FormatTime(DateTime utc)
+    {
+        var local = utc.ToLocalTime();
+        var diff = DateTime.Now - local;
+        if (diff.TotalMinutes < 1) return "الآن";
+        if (diff.TotalMinutes < 60) return $"منذ {(int)diff.TotalMinutes} د";
+        if (diff.TotalHours < 24) return $"منذ {(int)diff.TotalHours} س";
+        if (diff.TotalDays < 7) return $"منذ {(int)diff.TotalDays} يوم";
+        return local.ToString("yyyy/MM/dd");
+    }
+}

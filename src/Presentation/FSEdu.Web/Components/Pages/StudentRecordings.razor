@@ -1,0 +1,136 @@
+@page "/student/recordings"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject IConfiguration Config
+
+<PageTitle>المحاضرات المسجّلة</PageTitle>
+
+<div class="page">
+    <div class="fs-container">
+        <div class="page-head">
+            <div>
+                <h1>📼 المحاضرات المسجّلة</h1>
+                <p class="fs-text-muted">شاهد تسجيلات الحصص المباشرة السابقة في موادك</p>
+            </div>
+            <button class="fs-btn fs-btn-outline" @onclick="Load">🔄 تحديث</button>
+        </div>
+
+        @if (!_loaded)
+        {
+            <div class="fs-center" style="padding:60px"><span class="fs-spinner"></span></div>
+        }
+        else if (!Auth.IsAuthenticated)
+        {
+            <div class="fs-alert fs-alert-error">يجب تسجيل الدخول. <a href="/login">دخول</a></div>
+        }
+        else if (_selected is not null)
+        {
+            <div class="player-shell fs-card">
+                <div class="player-head">
+                    <button class="fs-btn fs-btn-outline" @onclick='() => _selected = null'>← الرجوع</button>
+                    <div>
+                        <h3>@_selected.Title</h3>
+                        <small class="fs-text-muted">أ/ @_selected.TeacherName · @_selected.SubjectName</small>
+                    </div>
+                </div>
+                <video controls preload="metadata" class="recording-player"
+                       src="@BuildRecordingUrl(_selected.RecordingUrl!)"></video>
+            </div>
+        }
+        else if (_sessions is null || !_sessions.Any())
+        {
+            <div class="fs-card fs-center empty">
+                <div style="font-size:64px">📼</div>
+                <h3>لا توجد محاضرات مسجّلة بعد</h3>
+                <p class="fs-text-muted">ستظهر هنا تسجيلات الحصص بعد انتهائها</p>
+            </div>
+        }
+        else
+        {
+            <div class="recordings">
+                @foreach (var s in _sessions)
+                {
+                    <div class="rec-card fs-card">
+                        <div class="thumb">
+                            <span class="play">▶</span>
+                        </div>
+                        <div class="info">
+                            <h3>@s.Title</h3>
+                            <p class="fs-text-muted">@s.SubjectName · أ/ @s.TeacherName</p>
+                            <div class="meta">
+                                <span>📅 @(s.EndedAtUtc?.ToLocalTime().ToString("yyyy/MM/dd") ?? "-")</span>
+                                <span>⏱ @s.DurationMinutes دقيقة</span>
+                            </div>
+                            <div class="actions">
+                                <button class="fs-btn fs-btn-primary fs-btn-block" @onclick="() => _selected = s">
+                                    ▶ مشاهدة
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .page { padding: var(--fs-s-10) 0; min-height: calc(100vh - 72px); }
+    .page-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--fs-s-6); flex-wrap: wrap; gap: var(--fs-s-3); }
+    .empty { padding: 80px; text-align: center; }
+    .empty h3 { margin: var(--fs-s-3) 0 var(--fs-s-2); }
+
+    .recordings { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: var(--fs-s-4); }
+    .rec-card { padding: 0; overflow: hidden; }
+    .thumb {
+        background: linear-gradient(135deg, #1E2742, #5B4FE5);
+        height: 140px; display: flex; align-items: center; justify-content: center;
+        color: white;
+    }
+    .thumb .play { font-size: 56px; opacity: 0.9; }
+    .info { padding: var(--fs-s-4); }
+    .info h3 { margin: 0 0 4px; font-size: 17px; }
+    .info p { margin: 0 0 var(--fs-s-3); font-size: 13px; }
+    .meta { display: flex; gap: var(--fs-s-4); font-size: 13px; color: var(--fs-text-muted); flex-wrap: wrap; margin-bottom: var(--fs-s-3); }
+    .actions { margin-top: var(--fs-s-2); }
+
+    .player-shell { padding: var(--fs-s-4); }
+    .player-head { display: flex; align-items: center; gap: var(--fs-s-4); margin-bottom: var(--fs-s-4); flex-wrap: wrap; }
+    .player-head h3 { margin: 0; font-size: 18px; }
+    .recording-player {
+        width: 100%; max-height: 70vh; border-radius: var(--fs-r-md);
+        background: #000;
+    }
+</style>
+
+@code {
+    private List<FSEdu.Shared.Contracts.LiveClassroom.LiveSessionListItemDto>? _sessions;
+    private FSEdu.Shared.Contracts.LiveClassroom.LiveSessionListItemDto? _selected;
+    private bool _loaded;
+    private string _apiBase = "";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _apiBase = Config["ApiBaseUrl"] ?? "http://localhost:5080/";
+            await Auth.RestoreAsync();
+            await Load();
+        }
+    }
+
+    private async Task Load()
+    {
+        if (!Auth.IsAuthenticated) { _loaded = true; StateHasChanged(); return; }
+        try { _sessions = await Api.GetRecordedLiveSessionsAsync(); }
+        catch { _sessions = new(); }
+        _loaded = true; StateHasChanged();
+    }
+
+    private string BuildRecordingUrl(string url)
+        => url.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+           || url.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+            ? url
+            : _apiBase.TrimEnd('/') + url;
+}

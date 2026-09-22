@@ -1,0 +1,85 @@
+# ═══════════════════════════════════════════════════════════
+# FSEdu Caddy Configuration — Auto-SSL via Let's Encrypt
+# ═══════════════════════════════════════════════════════════
+
+{
+    email admin@{$DOMAIN}
+    # Enable HTTP/3
+    servers {
+        protocols h1 h2 h3
+    }
+}
+
+{$DOMAIN} {
+    # ─── Static uploads (receipts, ticket images) ──────
+    handle_path /uploads/* {
+        reverse_proxy api:8080 {
+            rewrite /uploads{uri}
+        }
+    }
+
+    # ─── Recorded lectures (proxied via API for auth) ──
+    handle_path /recordings/* {
+        reverse_proxy api:8080 {
+            rewrite /recordings{uri}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
+    # ─── API endpoints ─────────────────────────────────
+    handle_path /api/* {
+        reverse_proxy api:8080 {
+            rewrite /api{uri}
+            header_up X-Forwarded-Proto {scheme}
+            header_up X-Forwarded-Host {host}
+        }
+    }
+
+    # ─── SignalR Classroom Hub ─────────────────────────
+    handle_path /hubs/* {
+        reverse_proxy api:8080 {
+            rewrite /hubs{uri}
+            header_up X-Forwarded-Proto {scheme}
+            transport http {
+                versions 1.1
+            }
+        }
+    }
+
+    # ─── LiveKit (WebSocket) ───────────────────────────
+    # LiveKit runs in host network mode bound to 127.0.0.1:7880
+    # Caddy (bridge) reaches the host via host.docker.internal (host-gateway)
+    handle_path /livekit/* {
+        reverse_proxy host.docker.internal:7880 {
+            rewrite {uri}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
+    # ─── Blazor Web (default) ──────────────────────────
+    handle {
+        reverse_proxy web:8080 {
+            header_up X-Forwarded-Proto {scheme}
+            header_up X-Forwarded-Host {host}
+        }
+    }
+
+    # ─── Security headers ──────────────────────────────
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "SAMEORIGIN"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Permissions-Policy "camera=(self), microphone=(self), display-capture=(self)"
+        -Server
+    }
+
+    # ─── Logging ──────────────────────────────────────
+    log {
+        output file /var/log/caddy/access.log
+        format json
+    }
+
+    # ─── Compression ──────────────────────────────────
+    encode zstd gzip
+}

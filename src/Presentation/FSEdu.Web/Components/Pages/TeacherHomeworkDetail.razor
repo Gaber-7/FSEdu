@@ -1,0 +1,222 @@
+@page "/teacher/homework/{HomeworkId:guid}"
+@using FSEdu.Shared.Contracts.Courses
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject NavigationManager Nav
+@rendermode InteractiveServer
+
+<PageTitle>@(_hw?.Title ?? "الواجب") - FSEdu</PageTitle>
+
+<div class="hwd fs-container">
+    @if (!_loaded)
+    {
+        <div class="fs-loading"><span class="fs-spinner"></span></div>
+    }
+    else if (_hw is null)
+    {
+        <div class="fs-alert fs-alert-danger">تعذّر تحميل الواجب</div>
+        <a href="/teacher/homework" class="fs-btn fs-btn-ghost">← العودة</a>
+    }
+    else
+    {
+        <a href="/teacher/homework" class="back-link">← كل الواجبات</a>
+
+        <div class="hwd-head">
+            <small class="course-label">@_hw.CourseTitle</small>
+            <h1>@_hw.Title</h1>
+            <div class="meta-row">
+                <span>آخر موعد: <strong>@_hw.DueDateUtc.ToLocalTime().ToString("yyyy/MM/dd HH:mm")</strong></span>
+                <span>الدرجة الكاملة: <strong>@_hw.MaxScore</strong></span>
+                <span>@(_hw.Published ? "🟢 منشور" : "🟡 مسودّة")</span>
+            </div>
+            @if (!string.IsNullOrEmpty(_hw.Description))
+            {
+                <div class="hwd-desc">@_hw.Description</div>
+            }
+            @if (!string.IsNullOrEmpty(_hw.AttachmentUrl))
+            {
+                <a href="@_hw.AttachmentUrl" target="_blank" class="att-link">📎 الملف المرفق</a>
+            }
+        </div>
+
+        <h2>التسليمات (@_hw.Submissions.Length)</h2>
+        @if (_hw.Submissions.Length == 0)
+        {
+            <div class="empty">لم يُسلِّم أى طالب حتى الآن.</div>
+        }
+        else
+        {
+            <div class="sub-list">
+                @foreach (var s in _hw.Submissions)
+                {
+                    <div class="sub-card @(s.Graded ? "graded" : "ungraded")">
+                        <div class="sub-head">
+                            <div>
+                                <strong>@s.StudentName</strong>
+                                <small class="fs-text-muted">
+                                    سلّم: @s.SubmittedAtUtc.ToLocalTime().ToString("yyyy/MM/dd HH:mm")
+                                    @if (s.Late) { <span class="late-pill">⏰ متأخّر</span> }
+                                </small>
+                            </div>
+                            @if (s.Graded)
+                            {
+                                <div class="grade-pill"> @s.Score / @_hw.MaxScore </div>
+                            }
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(s.Body))
+                        {
+                            <div class="sub-body">@s.Body</div>
+                        }
+                        @if (!string.IsNullOrEmpty(s.AttachmentUrl))
+                        {
+                            <a href="@s.AttachmentUrl" target="_blank" class="att-link">📎 ملف الطالب</a>
+                        }
+
+                        @if (s.Graded && !string.IsNullOrEmpty(s.FeedbackBody))
+                        {
+                            <div class="my-feedback">
+                                <strong>تعليقك:</strong> @s.FeedbackBody
+                            </div>
+                        }
+
+                        @if (!s.Graded || _editingId == s.SubmissionId)
+                        {
+                            <div class="grade-row">
+                                <div>
+                                    <label>الدرجة (من @_hw.MaxScore)</label>
+                                    <input type="number" class="fs-input" step="0.5" min="0" max="@_hw.MaxScore"
+                                           value="@GetGradeInput(s)"
+                                           @oninput="@((ChangeEventArgs e) => SetGradeInput(s.SubmissionId, e.Value?.ToString() ?? ""))" />
+                                </div>
+                                <div class="flex-1">
+                                    <label>تعليق (اختيارى)</label>
+                                    <input class="fs-input"
+                                           value="@GetFeedbackInput(s)"
+                                           @oninput="@((ChangeEventArgs e) => SetFeedbackInput(s.SubmissionId, e.Value?.ToString() ?? ""))" />
+                                </div>
+                                <div class="grade-actions">
+                                    <button class="fs-btn fs-btn-primary fs-btn-sm" @onclick="() => GradeSubmission(s.SubmissionId)" disabled="@_busy">
+                                        @if (_busy && _busyId == s.SubmissionId) { <span class="fs-spinner"></span> }
+                                        else if (s.Graded) { <text>تحديث الدرجة</text> }
+                                        else { <text>تصحيح</text> }
+                                    </button>
+                                    @if (_editingId == s.SubmissionId)
+                                    {
+                                        <button class="fs-btn fs-btn-ghost fs-btn-sm" @onclick="() => _editingId = null">إلغاء</button>
+                                    }
+                                </div>
+                            </div>
+                        }
+                        else
+                        {
+                            <button class="fs-btn fs-btn-ghost fs-btn-sm" @onclick="() => _editingId = s.SubmissionId">✏️ تعديل التصحيح</button>
+                        }
+                    </div>
+                }
+            </div>
+        }
+    }
+</div>
+
+<style>
+    .hwd { min-height: calc(100vh - 72px); padding: var(--fs-s-6) 0; max-width: 920px; }
+    .back-link { color: var(--fs-primary); text-decoration: none; font-size: 14px; }
+
+    .hwd-head { margin: var(--fs-s-3) 0 var(--fs-s-5); }
+    .course-label { color: var(--fs-text-muted); font-weight: 600; }
+    .hwd-head h1 { margin: 4px 0 var(--fs-s-3); }
+    .meta-row { display: flex; gap: var(--fs-s-5); color: var(--fs-text-muted); flex-wrap: wrap; margin-bottom: var(--fs-s-3); }
+    .meta-row strong { color: var(--fs-text); }
+    .hwd-desc { background: white; border: 1px solid var(--fs-border); border-radius: var(--fs-r-lg); padding: var(--fs-s-3); white-space: pre-wrap; }
+    .att-link {
+        display: inline-block; padding: 6px 14px;
+        background: var(--fs-primary-soft); color: var(--fs-primary);
+        border-radius: var(--fs-r-md); font-weight: 700; font-size: 13px;
+        text-decoration: none; margin-top: var(--fs-s-2);
+    }
+
+    .empty { text-align: center; padding: var(--fs-s-8); color: var(--fs-text-muted); background: white; border-radius: var(--fs-r-lg); border: 1px solid var(--fs-border); }
+
+    .sub-list { display: flex; flex-direction: column; gap: var(--fs-s-3); margin-top: var(--fs-s-3); }
+    .sub-card {
+        background: white; border: 1px solid var(--fs-border);
+        border-right: 4px solid var(--fs-warning, #F59E0B);
+        border-radius: var(--fs-r-lg); padding: var(--fs-s-4);
+        display: flex; flex-direction: column; gap: var(--fs-s-3);
+    }
+    .sub-card.graded { border-right-color: #16A34A; background: #F7FEF9; }
+    .sub-head { display: flex; justify-content: space-between; align-items: center; gap: var(--fs-s-3); }
+    .late-pill { background: #FEE2E2; color: #B91C1C; padding: 2px 8px; border-radius: var(--fs-r-full); font-size: 11px; font-weight: 700; margin-right: 6px; }
+    .grade-pill { background: #DCFCE7; color: #15803D; padding: 6px 14px; border-radius: var(--fs-r-full); font-weight: 800; font-size: 14px; }
+    .sub-body { white-space: pre-wrap; line-height: 1.7; padding: var(--fs-s-3); background: var(--fs-bg); border-radius: var(--fs-r-md); }
+    .my-feedback { background: #EFF6FF; border: 1px solid #BFDBFE; padding: var(--fs-s-3); border-radius: var(--fs-r-md); }
+
+    .grade-row { display: grid; grid-template-columns: 140px 1fr auto; gap: var(--fs-s-3); align-items: end; padding-top: var(--fs-s-3); border-top: 1px solid var(--fs-border); }
+    @@media (max-width: 700px) { .grade-row { grid-template-columns: 1fr; } }
+    .grade-row label { font-size: 12px; font-weight: 600; color: var(--fs-text-muted); display: block; margin-bottom: 4px; }
+    .grade-actions { display: flex; gap: var(--fs-s-2); align-items: center; }
+    .flex-1 { flex: 1; }
+</style>
+
+@code {
+    [Parameter] public Guid HomeworkId { get; set; }
+
+    private TeacherHomeworkDetailDto? _hw;
+    private bool _loaded;
+    private bool _busy;
+    private Guid? _busyId;
+    private Guid? _editingId;
+    private readonly Dictionary<Guid, string> _gradeInputs = new();
+    private readonly Dictionary<Guid, string> _feedbackInputs = new();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        await Auth.RestoreAsync();
+        if (!Auth.IsInRole("Teacher")) { Nav.NavigateTo("/login"); return; }
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        _hw = await Api.GetTeacherHomeworkDetailAsync(HomeworkId);
+        if (_hw is not null)
+        {
+            foreach (var s in _hw.Submissions)
+            {
+                if (s.Score.HasValue) _gradeInputs[s.SubmissionId] = s.Score.Value.ToString();
+                if (!string.IsNullOrEmpty(s.FeedbackBody)) _feedbackInputs[s.SubmissionId] = s.FeedbackBody;
+            }
+        }
+        _loaded = true; StateHasChanged();
+    }
+
+    private string GetGradeInput(TeacherHomeworkSubmissionRowDto s) =>
+        _gradeInputs.TryGetValue(s.SubmissionId, out var v) ? v : "";
+
+    private string GetFeedbackInput(TeacherHomeworkSubmissionRowDto s) =>
+        _feedbackInputs.TryGetValue(s.SubmissionId, out var v) ? v : "";
+
+    private void SetGradeInput(Guid id, string v) => _gradeInputs[id] = v;
+    private void SetFeedbackInput(Guid id, string v) => _feedbackInputs[id] = v;
+
+    private async Task GradeSubmission(Guid submissionId)
+    {
+        if (!_gradeInputs.TryGetValue(submissionId, out var scoreStr) ||
+            !decimal.TryParse(scoreStr, out var score)) return;
+        _feedbackInputs.TryGetValue(submissionId, out var feedback);
+        _busy = true; _busyId = submissionId; StateHasChanged();
+        try
+        {
+            var (ok, _) = await Api.GradeHomeworkSubmissionAsync(submissionId, score,
+                string.IsNullOrWhiteSpace(feedback) ? null : feedback);
+            if (ok)
+            {
+                _editingId = null;
+                await Load();
+            }
+        }
+        finally { _busy = false; _busyId = null; StateHasChanged(); }
+    }
+}

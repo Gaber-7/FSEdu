@@ -1,0 +1,36 @@
+@if (Items is not null && Items.Count > 0)
+{
+    <div class="results-section">
+        <h3 class="section-title">@Title <span class="count">(@Items.Count)</span></h3>
+        <div class="results-list">
+            @foreach (var r in Items)
+            {
+                <a href="@(r.Url ?? "#")" class="result-row">
+                    <span class="kind-icon">@KindIcon(Kind)</span>
+                    <div class="result-body">
+                        <strong>@r.Title</strong>
+                        @if (!string.IsNullOrEmpty(r.Subtitle))
+                        { <small class="fs-text-muted">@r.Subtitle</small> }
+                        @if (!string.IsNullOrEmpty(r.Snippet))
+                        { <p class="snippet">@r.Snippet</p> }
+                    </div>
+                </a>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public string Title { get; set; } = "";
+    [Parameter] public string Kind { get; set; } = "";
+    [Parameter] public List<FSEdu.Shared.Contracts.Search.SearchResultDto>? Items { get; set; }
+
+    private static string KindIcon(string kind) => kind switch
+    {
+        "course" => "📚",
+        "live" => "🎥",
+        "recording" => "📼",
+        "lesson" => "🎬",
+        _ => "🔎"
+    };
+}

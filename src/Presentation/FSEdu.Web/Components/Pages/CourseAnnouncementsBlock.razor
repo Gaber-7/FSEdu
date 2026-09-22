@@ -1,0 +1,186 @@
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+
+@if (_data is null)
+{
+    <div class="fs-center" style="padding:24px"><span class="fs-spinner"></span></div>
+}
+else
+{
+    <div class="ann-wrap">
+        @if (_data.CanPost)
+        {
+            <div class="ann-composer fs-card">
+                @if (!_showForm)
+                {
+                    <button class="fs-btn fs-btn-primary" @onclick="() => _showForm = true">
+                        ➕ نشر إعلان جديد
+                    </button>
+                }
+                else
+                {
+                    <h4>إعلان جديد</h4>
+                    <input type="text" class="ann-input" placeholder="عنوان الإعلان"
+                           maxlength="255" @bind="_title" @bind:event="oninput" />
+                    <textarea class="ann-input" rows="4" maxlength="4000"
+                              placeholder="نص الإعلان (مثلاً: الاختبار يوم الخميس الساعة 5م)"
+                              @bind="_body" @bind:event="oninput"></textarea>
+                    <label class="pin-label">
+                        <input type="checkbox" @bind="_pinned" />
+                        📌 تثبيت في الأعلى
+                    </label>
+                    @if (!string.IsNullOrEmpty(_error))
+                    {
+                        <div class="fs-alert fs-alert-error">@_error</div>
+                    }
+                    <div class="ann-actions">
+                        <button class="fs-btn fs-btn-primary" @onclick="Post" disabled="@_busy">
+                            @(_busy ? "جارٍ النشر..." : "نشر")
+                        </button>
+                        <button class="fs-btn fs-btn-outline" @onclick="CancelForm" disabled="@_busy">إلغاء</button>
+                    </div>
+                }
+            </div>
+        }
+
+        @if (_data.Announcements.Count == 0)
+        {
+            <p class="fs-text-muted ann-empty">لا توجد إعلانات بعد.</p>
+        }
+        else
+        {
+            <div class="ann-list">
+                @foreach (var a in _data.Announcements)
+                {
+                    <article class="ann-item fs-card @(a.Pinned ? "pinned" : "")">
+                        <header>
+                            <h4>
+                                @if (a.Pinned) { <span class="pin">📌</span> }
+                                @a.Title
+                            </h4>
+                            <small class="fs-text-muted">
+                                @a.AuthorName · @FormatTime(a.CreatedAtUtc)
+                            </small>
+                        </header>
+                        <p class="ann-body">@a.Body</p>
+                        @if (CanDelete(a))
+                        {
+                            <button class="ann-del" title="حذف"
+                                    @onclick="() => Delete(a.Id)">🗑</button>
+                        }
+                    </article>
+                }
+            </div>
+        }
+    </div>
+}
+
+<style>
+    .ann-wrap { display: flex; flex-direction: column; gap: var(--fs-s-3); }
+    .ann-composer { padding: var(--fs-s-4); display: flex; flex-direction: column; gap: var(--fs-s-2); }
+    .ann-composer h4 { margin: 0 0 var(--fs-s-2); }
+    .ann-input {
+        width: 100%; padding: var(--fs-s-3);
+        border: 1px solid var(--fs-border); border-radius: var(--fs-r-md);
+        font-family: inherit; font-size: 14px;
+    }
+    .ann-input:focus { outline: none; border-color: var(--fs-primary); }
+    .pin-label { display: inline-flex; align-items: center; gap: var(--fs-s-2); font-size: 14px; cursor: pointer; }
+    .ann-actions { display: flex; gap: var(--fs-s-2); }
+
+    .ann-empty { text-align: center; padding: var(--fs-s-4); }
+    .ann-list { display: flex; flex-direction: column; gap: var(--fs-s-3); }
+    .ann-item {
+        position: relative;
+        padding: var(--fs-s-4);
+        border-right: 4px solid var(--fs-border);
+    }
+    .ann-item.pinned { border-right-color: var(--fs-primary); background: linear-gradient(180deg, var(--fs-primary-soft), white); }
+    .ann-item header { display: flex; justify-content: space-between; align-items: baseline; gap: var(--fs-s-2); flex-wrap: wrap; margin-bottom: var(--fs-s-2); }
+    .ann-item h4 { margin: 0; font-size: 16px; }
+    .ann-item .pin { color: var(--fs-primary); margin-left: 4px; }
+    .ann-body { margin: 0; line-height: 1.7; white-space: pre-wrap; }
+    .ann-del {
+        position: absolute; top: var(--fs-s-3); left: var(--fs-s-3);
+        background: transparent; border: none; cursor: pointer;
+        font-size: 16px; opacity: 0.4; transition: opacity var(--fs-trans);
+    }
+    .ann-del:hover { opacity: 1; color: var(--fs-error); }
+</style>
+
+@code {
+    [Parameter] public Guid CourseId { get; set; }
+
+    private FSEdu.Shared.Contracts.Courses.CourseAnnouncementsResponse? _data;
+    private bool _showForm;
+    private string _title = "";
+    private string _body = "";
+    private bool _pinned;
+    private bool _busy;
+    private string? _error;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            await Load();
+        }
+    }
+
+    private async Task Load()
+    {
+        _data = await Api.GetCourseAnnouncementsAsync(CourseId);
+        StateHasChanged();
+    }
+
+    private bool CanDelete(FSEdu.Shared.Contracts.Courses.CourseAnnouncementDto a)
+    {
+        var uid = Auth.CurrentUser?.Id;
+        if (uid is null) return false;
+        return Auth.IsInRole("Admin") || a.AuthorUserId == uid || (_data?.CanPost ?? false);
+    }
+
+    private void CancelForm()
+    {
+        _showForm = false;
+        _title = ""; _body = ""; _pinned = false; _error = null;
+    }
+
+    private async Task Post()
+    {
+        _error = null;
+        if (string.IsNullOrWhiteSpace(_title) || _title.Trim().Length < 3)
+        { _error = "العنوان قصير جدًا"; return; }
+        if (string.IsNullOrWhiteSpace(_body) || _body.Trim().Length < 3)
+        { _error = "النص قصير جدًا"; return; }
+
+        _busy = true; StateHasChanged();
+        try
+        {
+            var err = await Api.PostAnnouncementAsync(CourseId,
+                new FSEdu.Shared.Contracts.Courses.PostAnnouncementRequest(_title.Trim(), _body.Trim(), _pinned));
+            if (err is not null) { _error = err.Message ?? "تعذّر النشر"; return; }
+            CancelForm();
+            await Load();
+        }
+        finally { _busy = false; StateHasChanged(); }
+    }
+
+    private async Task Delete(Guid id)
+    {
+        var ok = await Api.DeleteAnnouncementAsync(id);
+        if (ok) await Load();
+    }
+
+    private static string FormatTime(DateTime utc)
+    {
+        var local = utc.ToLocalTime();
+        var diff = DateTime.Now - local;
+        if (diff.TotalMinutes < 1) return "الآن";
+        if (diff.TotalMinutes < 60) return $"منذ {(int)diff.TotalMinutes} د";
+        if (diff.TotalHours < 24) return $"منذ {(int)diff.TotalHours} س";
+        if (diff.TotalDays < 7) return $"منذ {(int)diff.TotalDays} يوم";
+        return local.ToString("yyyy/MM/dd");
+    }
+}

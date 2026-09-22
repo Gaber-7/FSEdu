@@ -1,0 +1,339 @@
+@page "/settings/security/totp"
+@using FSEdu.Shared.Contracts.Security
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@rendermode InteractiveServer
+
+<PageTitle>المصادقة الثنائية - FSEdu</PageTitle>
+
+<div class="totp-page fs-container">
+    <div class="page-head">
+        <h1>🔐 المصادقة الثنائية (2FA)</h1>
+        <p class="fs-text-muted">طبقة حماية إضافية. كل تسجيل دخول سيطلب رمزًا من تطبيقك (Google Authenticator، Authy، Microsoft Authenticator، 1Password…)</p>
+    </div>
+
+    @if (!_loaded)
+    {
+        <div class="fs-loading"><span class="fs-spinner"></span></div>
+    }
+    else if (_setup is not null && _showSetup)
+    {
+        <div class="setup-card">
+            <h3>الخطوة 1 — افتح تطبيق المصادقة وامسح هذا الرمز</h3>
+            <div class="qr-row">
+                <div class="qr-frame">
+                    <img src="@QrUrl(_setup.ProvisioningUri)" alt="QR Code" />
+                </div>
+                <div class="qr-side">
+                    <p>تعذّر مسح الكود؟ أدخل المفتاح يدويًا:</p>
+                    <code class="secret-pill">@FormatSecret(_setup.SecretBase32)</code>
+                    <small class="fs-text-muted">الحساب: @_setup.AccountLabel</small>
+                </div>
+            </div>
+
+            <h3>الخطوة 2 — أدخل الرمز الذي يظهر في تطبيقك (6 أرقام)</h3>
+            <div class="verify-row">
+                <input type="text" class="fs-input verify-input" inputmode="numeric" maxlength="6"
+                       placeholder="000000" @bind="_confirmCode" />
+                <button class="fs-btn fs-btn-primary" @onclick="ConfirmSetup" disabled="@_busy">
+                    @if (_busy) { <span class="fs-spinner"></span> } else { <text>تفعيل المصادقة الثنائية</text> }
+                </button>
+                <button class="fs-btn fs-btn-ghost" @onclick="CancelSetup">إلغاء</button>
+            </div>
+            @if (!string.IsNullOrEmpty(_setupError))
+            {
+                <div class="fs-alert fs-alert-danger">@_setupError</div>
+            }
+        </div>
+    }
+    else if (_recoveryCodes is not null)
+    {
+        <div class="recovery-card">
+            <h3>🎉 تم تفعيل المصادقة الثنائية</h3>
+            <p>احفظ هذه الرموز في مكان آمن (مدير كلمات السر، طباعة...). كل رمز يُستخدم مرة واحدة فقط، ويسمح لك بالدخول إذا فقدت هاتفك.</p>
+            <div class="codes-grid">
+                @foreach (var c in _recoveryCodes)
+                {
+                    <code class="code-cell">@c</code>
+                }
+            </div>
+            <div class="recovery-actions">
+                <button class="fs-btn fs-btn-primary" @onclick="CopyCodes">
+                    @(_codesCopied ? "✓ تم النسخ" : "📋 نسخ الرموز")
+                </button>
+                <button class="fs-btn fs-btn-ghost" @onclick="DoneWithCodes">حفظت الرموز — تابع</button>
+            </div>
+        </div>
+    }
+    else if (_status is not null)
+    {
+        <div class="status-card @(_status.Enabled ? "status-on" : "status-off")">
+            <div class="status-icon">@(_status.Enabled ? "🟢" : "⚪")</div>
+            <div class="status-info">
+                <h3>@(_status.Enabled ? "المصادقة الثنائية مفعّلة" : "المصادقة الثنائية غير مفعّلة")</h3>
+                @if (_status.Enabled)
+                {
+                    <p>مفعّلة منذ: @(_status.EnabledAtUtc?.ToLocalTime().ToString("yyyy/MM/dd") ?? "—")</p>
+                    <p>عدد رموز الاسترداد المتبقية: <strong>@_status.RemainingRecoveryCodes</strong></p>
+                }
+                else
+                {
+                    <p>فعّل المصادقة الثنائية لتأمين حسابك من الوصول غير المصرّح به.</p>
+                }
+            </div>
+            <div class="status-action">
+                @if (!_status.Enabled)
+                {
+                    <button class="fs-btn fs-btn-primary" @onclick="StartSetup" disabled="@_busy">
+                        تفعيل الآن
+                    </button>
+                }
+                else
+                {
+                    <button class="fs-btn fs-btn-ghost" @onclick="() => _showDisable = true">تعطيل</button>
+                    <button class="fs-btn fs-btn-ghost" @onclick="() => _showRegen = true">رموز استرداد جديدة</button>
+                }
+            </div>
+        </div>
+
+        @if (_status.Enabled && _showDisable)
+        {
+            <div class="action-card">
+                <h3>⚠️ تعطيل المصادقة الثنائية</h3>
+                <p>أدخل رمز TOTP الحالي من تطبيقك أو أحد رموز الاسترداد لتأكيد التعطيل.</p>
+                <div class="verify-row">
+                    <input type="text" class="fs-input verify-input" placeholder="رمز TOTP أو رمز استرداد"
+                           @bind="_disableCode" />
+                    <button class="fs-btn fs-btn-danger" @onclick="DisableTotp" disabled="@_busy">
+                        @if (_busy) { <span class="fs-spinner"></span> } else { <text>تعطيل</text> }
+                    </button>
+                    <button class="fs-btn fs-btn-ghost" @onclick="() => { _showDisable = false; _actionError = null; }">إلغاء</button>
+                </div>
+                @if (!string.IsNullOrEmpty(_actionError))
+                {
+                    <div class="fs-alert fs-alert-danger">@_actionError</div>
+                }
+            </div>
+        }
+
+        @if (_status.Enabled && _showRegen)
+        {
+            <div class="action-card">
+                <h3>🔄 توليد رموز استرداد جديدة</h3>
+                <p>سيتم إبطال جميع رموز الاسترداد السابقة. أدخل رمز TOTP الحالي للتأكيد.</p>
+                <div class="verify-row">
+                    <input type="text" class="fs-input verify-input" inputmode="numeric" maxlength="6"
+                           placeholder="000000" @bind="_regenCode" />
+                    <button class="fs-btn fs-btn-primary" @onclick="RegenRecovery" disabled="@_busy">
+                        @if (_busy) { <span class="fs-spinner"></span> } else { <text>توليد رموز جديدة</text> }
+                    </button>
+                    <button class="fs-btn fs-btn-ghost" @onclick="() => { _showRegen = false; _actionError = null; }">إلغاء</button>
+                </div>
+                @if (!string.IsNullOrEmpty(_actionError))
+                {
+                    <div class="fs-alert fs-alert-danger">@_actionError</div>
+                }
+            </div>
+        }
+    }
+</div>
+
+<style>
+    .totp-page { min-height: calc(100vh - 72px); padding: var(--fs-s-8) 0; max-width: 760px; }
+    .page-head { margin-bottom: var(--fs-s-6); }
+    .page-head h1 { margin: 0 0 var(--fs-s-2); }
+
+    .status-card {
+        display: grid; grid-template-columns: auto 1fr auto;
+        gap: var(--fs-s-4); align-items: center;
+        background: white; border: 1px solid var(--fs-border);
+        border-radius: var(--fs-r-xl); padding: var(--fs-s-5);
+        margin-bottom: var(--fs-s-5);
+    }
+    .status-card.status-on { border-color: var(--fs-success, #16A34A); background: #F0FDF4; }
+    .status-icon { font-size: 38px; }
+    .status-info h3 { margin: 0 0 var(--fs-s-2); }
+    .status-info p { margin: 2px 0; color: var(--fs-text-muted); }
+    .status-action { display: flex; flex-direction: column; gap: var(--fs-s-2); }
+    @@media (max-width: 700px) {
+        .status-card { grid-template-columns: 1fr; text-align: center; }
+        .status-action { flex-direction: row; flex-wrap: wrap; justify-content: center; }
+    }
+
+    .setup-card, .recovery-card, .action-card {
+        background: white; border: 1px solid var(--fs-border);
+        border-radius: var(--fs-r-xl); padding: var(--fs-s-5);
+        margin-bottom: var(--fs-s-5);
+    }
+    .setup-card h3, .recovery-card h3, .action-card h3 { margin: 0 0 var(--fs-s-3); }
+
+    .qr-row {
+        display: grid; grid-template-columns: auto 1fr;
+        gap: var(--fs-s-5); align-items: center; margin-bottom: var(--fs-s-5);
+    }
+    @@media (max-width: 600px) { .qr-row { grid-template-columns: 1fr; } }
+    .qr-frame {
+        background: white; padding: var(--fs-s-3);
+        border-radius: var(--fs-r-lg); border: 1px solid var(--fs-border);
+        width: 220px; height: 220px;
+        display: flex; align-items: center; justify-content: center;
+    }
+    .qr-frame img { width: 100%; height: 100%; }
+    .qr-side p { margin: 0 0 var(--fs-s-2); }
+    .secret-pill {
+        display: inline-block;
+        background: var(--fs-bg); padding: 10px 16px;
+        border-radius: var(--fs-r-md);
+        font-family: monospace; font-size: 14px;
+        letter-spacing: 1px; word-break: break-all;
+        border: 1px dashed var(--fs-border);
+    }
+
+    .verify-row {
+        display: flex; gap: var(--fs-s-2); align-items: center; flex-wrap: wrap;
+        margin: var(--fs-s-3) 0;
+    }
+    .verify-input {
+        max-width: 200px; text-align: center; font-size: 18px;
+        letter-spacing: 4px; font-weight: 700;
+    }
+
+    .codes-grid {
+        display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+        gap: var(--fs-s-2); margin: var(--fs-s-4) 0;
+    }
+    .code-cell {
+        background: var(--fs-bg); padding: 10px 14px;
+        border-radius: var(--fs-r-md);
+        font-family: monospace; font-size: 14px;
+        text-align: center; font-weight: 700;
+        border: 1px solid var(--fs-border);
+    }
+    .recovery-actions { display: flex; gap: var(--fs-s-3); flex-wrap: wrap; }
+</style>
+
+@code {
+    private TotpStatusDto? _status;
+    private TotpSetupDto? _setup;
+    private List<string>? _recoveryCodes;
+    private bool _loaded;
+    private bool _busy;
+    private bool _showSetup;
+    private bool _showDisable;
+    private bool _showRegen;
+    private bool _codesCopied;
+    private string _confirmCode = "";
+    private string _disableCode = "";
+    private string _regenCode = "";
+    private string? _setupError;
+    private string? _actionError;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            if (!Auth.IsAuthenticated) { Nav.NavigateTo("/login"); return; }
+            _status = await Api.GetTotpStatusAsync();
+            _loaded = true; StateHasChanged();
+        }
+    }
+
+    private async Task StartSetup()
+    {
+        _setupError = null; _busy = true; StateHasChanged();
+        try
+        {
+            var (data, err) = await Api.BeginTotpSetupAsync();
+            if (err is not null) { _setupError = err.Message; return; }
+            _setup = data; _showSetup = true; _confirmCode = "";
+        }
+        finally { _busy = false; StateHasChanged(); }
+    }
+
+    private async Task ConfirmSetup()
+    {
+        _setupError = null;
+        if (string.IsNullOrWhiteSpace(_confirmCode) || _confirmCode.Length != 6)
+        { _setupError = "أدخل 6 أرقام"; return; }
+        _busy = true; StateHasChanged();
+        try
+        {
+            var (data, err) = await Api.ConfirmTotpSetupAsync(_confirmCode.Trim());
+            if (err is not null) { _setupError = err.Message; return; }
+            _recoveryCodes = data!.RecoveryCodes;
+            _setup = null; _showSetup = false;
+        }
+        finally { _busy = false; StateHasChanged(); }
+    }
+
+    private void CancelSetup()
+    {
+        _setup = null; _showSetup = false; _confirmCode = ""; _setupError = null;
+    }
+
+    private async Task DoneWithCodes()
+    {
+        _recoveryCodes = null;
+        _status = await Api.GetTotpStatusAsync();
+        StateHasChanged();
+    }
+
+    private async Task CopyCodes()
+    {
+        if (_recoveryCodes is null) return;
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", string.Join("\n", _recoveryCodes));
+            _codesCopied = true; StateHasChanged();
+            await Task.Delay(2000);
+            _codesCopied = false; StateHasChanged();
+        }
+        catch { }
+    }
+
+    private async Task DisableTotp()
+    {
+        _actionError = null; _busy = true; StateHasChanged();
+        try
+        {
+            var (ok, err) = await Api.DisableTotpAsync(_disableCode.Trim());
+            if (!ok) { _actionError = err?.Message ?? "تعذّر التعطيل"; return; }
+            _showDisable = false; _disableCode = "";
+            _status = await Api.GetTotpStatusAsync();
+        }
+        finally { _busy = false; StateHasChanged(); }
+    }
+
+    private async Task RegenRecovery()
+    {
+        _actionError = null; _busy = true; StateHasChanged();
+        try
+        {
+            var (data, err) = await Api.RegenerateTotpRecoveryAsync(_regenCode.Trim());
+            if (err is not null) { _actionError = err.Message; return; }
+            _recoveryCodes = data!.RecoveryCodes;
+            _showRegen = false; _regenCode = "";
+            _status = await Api.GetTotpStatusAsync();
+        }
+        finally { _busy = false; StateHasChanged(); }
+    }
+
+    private static string FormatSecret(string s)
+    {
+        // Group into 4-char chunks for readability
+        var groups = new List<string>();
+        for (int i = 0; i < s.Length; i += 4)
+            groups.Add(s.Substring(i, Math.Min(4, s.Length - i)));
+        return string.Join(" ", groups);
+    }
+
+    private static string QrUrl(string uri)
+    {
+        // Public QR generator. The data is the otpauth URI which only the user's
+        // device should decode — the secret is exposed on this page anyway.
+        return $"https://api.qrserver.com/v1/create-qr-code/?size=200x200&data={Uri.EscapeDataString(uri)}";
+    }
+}

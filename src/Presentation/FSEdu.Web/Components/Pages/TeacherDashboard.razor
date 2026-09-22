@@ -1,0 +1,472 @@
+@page "/dashboard/teacher"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+
+<PageTitle>لوحة المدرس — FSEdu</PageTitle>
+
+<div class="dashboard">
+    <div class="fs-container">
+        @if (!_loaded)
+        {
+            <div class="fs-center" style="padding:80px"><span class="fs-spinner"></span></div>
+        }
+        else if (!Auth.IsAuthenticated || !Auth.IsInRole("Teacher"))
+        {
+            <div class="fs-alert fs-alert-error">للمدرسين فقط. <a href="/login">تسجيل الدخول</a></div>
+        }
+        else if (_data is null)
+        {
+            <div class="fs-alert fs-alert-error">تعذّر تحميل البيانات</div>
+        }
+        else
+        {
+            <div class="welcome-bar">
+                <div>
+                    <h1>👨‍🏫 أهلاً أ/ @_data.FullName</h1>
+                    <p class="fs-text-muted">@_data.YearsOfExperience سنة خبرة · @(_data.RatingAvg > 0 ? $"⭐ {_data.RatingAvg:F1}" : "لم تُقيَّم بعد")</p>
+                </div>
+                @if (_data.Verified)
+                {
+                    <span class="fs-badge fs-badge-secondary">✓ معتمد</span>
+                }
+                else
+                {
+                    <span class="fs-badge fs-badge-accent">⏳ بانتظار الموافقة</span>
+                }
+            </div>
+
+            @if (!_data.Verified)
+            {
+                <div class="fs-alert fs-alert-info" style="margin-bottom:var(--fs-s-6)">
+                    <span>ℹ️</span>
+                    <div>
+                        <strong>حسابك قيد المراجعة</strong>
+                        <p style="margin:4px 0 0 0; font-size:14px">
+                            سيتم مراجعة بياناتك ومؤهلاتك خلال 24-48 ساعة.
+                        </p>
+                    </div>
+                </div>
+            }
+
+            <div class="fs-grid fs-grid-4 kpi-row">
+                <div class="fs-card kpi-card">
+                    <span class="kpi-icon" style="background:var(--fs-primary-soft);color:var(--fs-primary)">📚</span>
+                    <div>
+                        <strong class="kpi-value">@_data.PublishedCourses</strong>
+                        <span class="kpi-label">دورات منشورة</span>
+                    </div>
+                </div>
+                <div class="fs-card kpi-card">
+                    <span class="kpi-icon" style="background:var(--fs-accent-soft);color:#B56E00">⏳</span>
+                    <div>
+                        <strong class="kpi-value">@_data.PendingCourses</strong>
+                        <span class="kpi-label">بانتظار الموافقة</span>
+                    </div>
+                </div>
+                <div class="fs-card kpi-card">
+                    <span class="kpi-icon" style="background:var(--fs-secondary-soft);color:var(--fs-secondary)">🎥</span>
+                    <div>
+                        <strong class="kpi-value">@_data.TotalLessons</strong>
+                        <span class="kpi-label">إجمالي الدروس</span>
+                    </div>
+                </div>
+                <div class="fs-card kpi-card">
+                    <span class="kpi-icon" style="background:#E0FAF4;color:var(--fs-success)">👥</span>
+                    <div>
+                        <strong class="kpi-value">@_data.TotalEnrollments</strong>
+                        <span class="kpi-label">إجمالي الاشتراكات</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Live session analytics -->
+            <h2 class="section-title">🎥 تحليلات البث المباشر</h2>
+            <div class="live-analytics">
+                <div class="la-card @(_data.LiveAnalytics.LiveNow > 0 ? "live" : "")">
+                    <div class="la-icon">🔴</div>
+                    <div class="la-value">@_data.LiveAnalytics.LiveNow</div>
+                    <div class="la-label">مباشر الآن</div>
+                </div>
+                <div class="la-card">
+                    <div class="la-icon">📅</div>
+                    <div class="la-value">@_data.LiveAnalytics.ScheduledUpcoming</div>
+                    <div class="la-label">مجدولة قادمة</div>
+                </div>
+                <div class="la-card">
+                    <div class="la-icon">🎬</div>
+                    <div class="la-value">@_data.LiveAnalytics.TotalSessionsHosted</div>
+                    <div class="la-label">إجمالي الحصص</div>
+                </div>
+                <div class="la-card">
+                    <div class="la-icon">📊</div>
+                    <div class="la-value">@_data.LiveAnalytics.SessionsThisWeek</div>
+                    <div class="la-label">هذا الأسبوع</div>
+                </div>
+                <div class="la-card">
+                    <div class="la-icon">📼</div>
+                    <div class="la-value">@_data.LiveAnalytics.RecordingsAvailable</div>
+                    <div class="la-label">تسجيلات</div>
+                </div>
+                <div class="la-card">
+                    <div class="la-icon">👥</div>
+                    <div class="la-value">@_data.LiveAnalytics.UniqueStudentsAttended</div>
+                    <div class="la-label">طلاب حضروا</div>
+                </div>
+                <div class="la-card">
+                    <div class="la-icon">⏱️</div>
+                    <div class="la-value">@FormatMinutes(_data.LiveAnalytics.TotalAttendanceMinutes)</div>
+                    <div class="la-label">إجمالي المشاهدة</div>
+                </div>
+                <div class="la-card">
+                    <div class="la-icon">📈</div>
+                    <div class="la-value">@_data.LiveAnalytics.AvgAttendancePerSession</div>
+                    <div class="la-label">متوسط الحضور</div>
+                </div>
+                <div class="la-card la-card-highlight">
+                    <div class="la-icon">⭐</div>
+                    <div class="la-value">@_data.LiveAnalytics.QualifiedAttendanceTotal</div>
+                    <div class="la-label">حضور حقيقي (&gt;50%)</div>
+                </div>
+                <div class="la-card la-card-highlight">
+                    <div class="la-icon">🎯</div>
+                    <div class="la-value">@_data.LiveAnalytics.AvgQualifiedPerSession</div>
+                    <div class="la-label">متوسط الحضور المُحتسب</div>
+                </div>
+            </div>
+
+            @if (_activity is { Count: > 0 })
+            {
+                <div class="fs-card act-section">
+                    <div class="card-head">
+                        <h3>📡 آخر النشاط على دوراتك</h3>
+                    </div>
+                    <div class="act-list">
+                        @foreach (var a in _activity.Take(8))
+                        {
+                            <a class="act-item @($"prio-{(a.Priority >= 80 ? "high" : a.Priority >= 50 ? "mid" : "low")}")"
+                               href="@(a.Url ?? "#")">
+                                <span class="act-emoji">@a.Emoji</span>
+                                <div class="act-info">
+                                    <strong>@a.Title</strong>
+                                    <small>@a.Subtitle</small>
+                                    <small class="act-course">📚 @a.CourseTitle · @FormatTime(a.AtUtc)</small>
+                                </div>
+                            </a>
+                        }
+                    </div>
+                </div>
+            }
+
+            @if (_data.LiveAnalytics.RecentSessions.Length > 0)
+            {
+                <div class="fs-card sessions-table">
+                    <div class="card-head">
+                        <h3>🗓️ آخر الحصص</h3>
+                        <a href="/teacher/live" class="fs-btn fs-btn-ghost fs-btn-sm">عرض الكل</a>
+                    </div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>العنوان</th>
+                                <th>الحالة</th>
+                                <th>التاريخ</th>
+                                <th>المدة</th>
+                                <th>الحضور الكلّي</th>
+                                <th title="حضور &gt; 50% من مدة الحصة">المُحتسب ⭐</th>
+                                <th>التسجيل</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var s in _data.LiveAnalytics.RecentSessions)
+                            {
+                                <tr>
+                                    <td>
+                                        <a href="/live/@s.Id" class="session-link">@s.Title</a>
+                                    </td>
+                                    <td>
+                                        <span class="status-pill @s.Status.ToLower()">@SessionStatusLabel(s.Status)</span>
+                                    </td>
+                                    <td><small>@s.ScheduledAtUtc.ToLocalTime().ToString("yyyy/MM/dd HH:mm")</small></td>
+                                    <td>@s.DurationMinutes د</td>
+                                    <td><strong>@s.AttendanceCount</strong></td>
+                                    <td><strong class="qualified-cell">@s.QualifiedAttendanceCount</strong></td>
+                                    <td>
+                                        @if (s.HasRecording) { <a href="/live/@s.Id">▶ متاح</a> }
+                                        else { <span class="fs-text-muted">—</span> }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+
+            <div class="dashboard-grid">
+                <div class="fs-card">
+                    <div class="card-head">
+                        <h3>📚 دوراتي</h3>
+                        <div style="display:flex;gap:var(--fs-s-2)">
+                            <a href="/teacher/courses" class="fs-btn fs-btn-ghost fs-btn-sm">عرض الكل</a>
+                            <a href="/teacher/courses/new" class="fs-btn fs-btn-primary fs-btn-sm">+ جديدة</a>
+                        </div>
+                    </div>
+                    @if (_data.RecentCourses.Any())
+                    {
+                        <div class="courses-list">
+                            @foreach (var c in _data.RecentCourses)
+                            {
+                                <a href="/teacher/courses/@c.Id/edit" class="course-item">
+                                    <span class="course-thumb-sm">📖</span>
+                                    <div class="course-info">
+                                        <strong>@c.Title</strong>
+                                        <small>@c.SubjectName · @c.LessonsCount درس</small>
+                                    </div>
+                                    <span class="status-chip @GetStatusClass(c.Status)">@StatusLabel(c.Status)</span>
+                                </a>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="empty-state">
+                            <div style="font-size:48px">📖</div>
+                            <p class="fs-text-muted">لا توجد دورات بعد</p>
+                            <a href="/teacher/courses/new" class="fs-btn fs-btn-primary fs-btn-sm">إنشاء أول دورة</a>
+                        </div>
+                    }
+                </div>
+
+                <div class="fs-card">
+                    <div class="card-head"><h3>⚡ إجراءات سريعة</h3></div>
+                    <div class="quick-actions">
+                        <a href="/teacher/courses/new" class="quick-action">
+                            <span>📚</span>
+                            <div>
+                                <strong>دورة جديدة</strong>
+                                <small>أنشئ دورة وأضف المحتوى</small>
+                            </div>
+                        </a>
+                        <button class="quick-action disabled" disabled>
+                            <span>🎥</span>
+                            <div>
+                                <strong>بث مباشر</strong>
+                                <small>قريبًا</small>
+                            </div>
+                        </button>
+                        <button class="quick-action disabled" disabled>
+                            <span>📝</span>
+                            <div>
+                                <strong>إنشاء اختبار</strong>
+                                <small>قريبًا</small>
+                            </div>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="fs-grid fs-grid-2">
+                <div class="fs-card">
+                    <div class="card-head"><h3>📬 أسئلة الطلاب</h3></div>
+                    <div class="empty-state">
+                        <p class="fs-text-muted">لا توجد أسئلة</p>
+                        <small class="fs-text-subtle">نظام "اسأل مدرس" قريبًا</small>
+                    </div>
+                </div>
+                <div class="fs-card">
+                    <div class="card-head"><h3>⭐ التقييمات</h3></div>
+                    <div class="empty-state">
+                        @if (_data.RatingsCount > 0)
+                        {
+                            <div style="text-align:center">
+                                <div style="font-size:48px;font-weight:800;color:var(--fs-primary)">@_data.RatingAvg.ToString("F1")</div>
+                                <div class="fs-text-muted">من @_data.RatingsCount تقييم</div>
+                            </div>
+                        }
+                        else
+                        {
+                            <p class="fs-text-muted">لم تتلقَّ تقييمات بعد</p>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .dashboard { padding: var(--fs-s-10) 0; min-height: calc(100vh - 72px); }
+    .welcome-bar { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: var(--fs-s-8); flex-wrap: wrap; gap: var(--fs-s-4); }
+    .welcome-bar h1 { font-size: 28px; margin-bottom: var(--fs-s-1); }
+    .kpi-row { margin-bottom: var(--fs-s-8); }
+    .kpi-card { display: flex; align-items: center; gap: var(--fs-s-4); }
+    .kpi-icon { width: 48px; height: 48px; border-radius: var(--fs-r-md); display: flex; align-items: center; justify-content: center; font-size: 24px; flex-shrink: 0; }
+    .kpi-value { display: block; font-size: 28px; font-weight: 800; line-height: 1; margin-bottom: 2px; color: var(--fs-primary); }
+    .kpi-label { font-size: 13px; color: var(--fs-text-muted); }
+    .dashboard-grid { display: grid; grid-template-columns: 2fr 1fr; gap: var(--fs-s-6); margin-bottom: var(--fs-s-6); }
+    @@media (max-width: 900px) { .dashboard-grid { grid-template-columns: 1fr; } }
+    .card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--fs-s-4); }
+    .card-head h3 { margin: 0; font-size: 18px; }
+
+    .courses-list { display: flex; flex-direction: column; gap: var(--fs-s-2); }
+    .course-item {
+        display: flex; align-items: center; gap: var(--fs-s-3);
+        padding: var(--fs-s-3); border-radius: var(--fs-r-md);
+        background: var(--fs-bg); color: inherit; text-decoration: none;
+        transition: all var(--fs-trans);
+    }
+    .course-item:hover { background: var(--fs-primary-soft); }
+    .course-thumb-sm { font-size: 28px; }
+    .course-info { flex: 1; }
+    .course-info strong { display: block; font-size: 14px; }
+    .course-info small { font-size: 12px; color: var(--fs-text-muted); }
+
+    .status-chip { padding: 3px 10px; border-radius: var(--fs-r-full); font-size: 11px; font-weight: 700; }
+    .status-draft { background: var(--fs-border); color: var(--fs-text-muted); }
+    .status-pending { background: var(--fs-accent-soft); color: #B56E00; }
+    .status-published { background: #D1FAE5; color: var(--fs-success); }
+    .status-rejected { background: #FEE2E2; color: var(--fs-danger); }
+
+    .quick-actions { display: flex; flex-direction: column; gap: var(--fs-s-2); }
+    .quick-action {
+        display: flex; align-items: center; gap: var(--fs-s-3);
+        padding: var(--fs-s-3);
+        background: var(--fs-bg); border: 1px solid var(--fs-border);
+        border-radius: var(--fs-r-md);
+        color: inherit; text-decoration: none;
+        cursor: pointer;
+        transition: all var(--fs-trans);
+        text-align: right;
+        font-family: inherit;
+    }
+    .quick-action:not(.disabled):hover { background: var(--fs-primary-soft); border-color: var(--fs-primary); }
+    .quick-action.disabled { opacity: 0.55; cursor: not-allowed; }
+    .quick-action > span { font-size: 24px; }
+    .quick-action strong { display: block; font-size: 14px; }
+    .quick-action small { font-size: 12px; color: var(--fs-text-muted); }
+
+    .empty-state { text-align: center; padding: var(--fs-s-6) var(--fs-s-3); }
+    .empty-state p { margin-bottom: var(--fs-s-3); }
+
+    /* Live analytics */
+    .section-title { font-size: 19px; margin: var(--fs-s-6) 0 var(--fs-s-3); }
+    .live-analytics {
+        display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: var(--fs-s-2); margin-bottom: var(--fs-s-5);
+    }
+    .la-card {
+        background: white; border-radius: var(--fs-r-md); padding: var(--fs-s-3);
+        text-align: center; border: 1px solid var(--fs-border);
+    }
+    .la-card.live { border-color: var(--fs-danger); background: rgba(220,38,38,0.05); }
+    .la-card-highlight {
+        border-color: var(--fs-accent);
+        background: linear-gradient(135deg, rgba(245,158,11,0.10) 0%, white 60%);
+    }
+    .la-card-highlight .la-value { color: #B56E00; }
+    .la-icon { font-size: 24px; margin-bottom: 4px; }
+    .la-value { font-size: 22px; font-weight: 800; line-height: 1; color: var(--fs-primary); }
+    .la-card.live .la-value { color: var(--fs-danger); }
+    .la-label { font-size: 11px; color: var(--fs-text-muted); margin-top: 4px; }
+    .qualified-cell { color: #B56E00; font-weight: 800; }
+
+    .sessions-table { padding: var(--fs-s-4); margin-bottom: var(--fs-s-5); }
+    .sessions-table table { width: 100%; border-collapse: collapse; }
+    .sessions-table th, .sessions-table td {
+        padding: 10px 8px; text-align: right; border-bottom: 1px solid var(--fs-border);
+        font-size: 13px;
+    }
+    .sessions-table th { font-weight: 700; color: var(--fs-text-muted); font-size: 12px; }
+    .sessions-table tbody tr:hover { background: var(--fs-bg); }
+    .session-link { color: var(--fs-primary); text-decoration: none; font-weight: 600; }
+    .session-link:hover { text-decoration: underline; }
+    .status-pill {
+        display: inline-block; padding: 2px 10px; border-radius: var(--fs-r-full);
+        font-size: 11px; font-weight: 700;
+    }
+    .status-pill.scheduled { background: var(--fs-primary-soft); color: var(--fs-primary); }
+    .status-pill.live { background: var(--fs-danger); color: white; }
+    .status-pill.ended { background: var(--fs-border); color: var(--fs-text-muted); }
+    .status-pill.cancelled { background: #FEE2E2; color: var(--fs-danger); }
+    .act-section { padding: var(--fs-s-4); margin-bottom: var(--fs-s-4); }
+    .act-list { display: flex; flex-direction: column; gap: var(--fs-s-2); margin-top: var(--fs-s-2); }
+    .act-item {
+        display: flex; gap: var(--fs-s-3); padding: var(--fs-s-3);
+        background: var(--fs-bg); border-radius: var(--fs-r-md);
+        text-decoration: none; color: inherit;
+        border-right: 4px solid var(--fs-border);
+        transition: all var(--fs-trans);
+    }
+    .act-item:hover { transform: translateX(-3px); border-color: var(--fs-primary); }
+    .act-item.prio-high { border-right-color: var(--fs-danger); background: linear-gradient(135deg, #FEE2E2 0%, var(--fs-bg) 50%); }
+    .act-item.prio-mid { border-right-color: var(--fs-accent); }
+    .act-item.prio-low { border-right-color: var(--fs-secondary); }
+    .act-emoji {
+        width: 40px; height: 40px; border-radius: 50%;
+        background: white;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 20px; flex-shrink: 0;
+    }
+    .act-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+    .act-info strong { font-size: 14px; }
+    .act-info small { font-size: 12px; color: var(--fs-text-muted); }
+    .act-course { color: var(--fs-text-subtle) !important; font-size: 11px !important; }
+</style>
+
+@code {
+    private FSEdu.Shared.Contracts.Dashboard.TeacherDashboardDto? _data;
+    private List<FSEdu.Shared.Contracts.Courses.TeacherActivityItemDto>? _activity;
+    private bool _loaded;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            if (Auth.IsAuthenticated && Auth.IsInRole("Teacher"))
+            {
+                try { _data = await Api.GetTeacherDashboardAsync(); }
+                catch { }
+                try { _activity = await Api.GetTeacherActivityFeedAsync(15); }
+                catch { }
+            }
+            _loaded = true; StateHasChanged();
+        }
+    }
+
+    private static string FormatTime(DateTime utc)
+    {
+        var local = utc.ToLocalTime();
+        var diff = DateTime.Now - local;
+        if (diff.TotalMinutes < 1) return "الآن";
+        if (diff.TotalMinutes < 60) return $"منذ {(int)diff.TotalMinutes} د";
+        if (diff.TotalHours < 24) return $"منذ {(int)diff.TotalHours} س";
+        if (diff.TotalDays < 7) return $"منذ {(int)diff.TotalDays} يوم";
+        return local.ToString("yyyy/MM/dd");
+    }
+
+    private static string StatusLabel(string s) => s switch
+    {
+        "Draft" => "مسودة", "PendingReview" => "معلّقة",
+        "Published" => "منشورة", "Rejected" => "مرفوضة", _ => s
+    };
+
+    private static string SessionStatusLabel(string s) => s switch
+    {
+        "Scheduled" => "مجدولة", "Live" => "مباشرة", "Ended" => "انتهت", "Cancelled" => "ملغاة", _ => s
+    };
+
+    private static string FormatMinutes(int min)
+    {
+        if (min < 60) return $"{min} د";
+        var h = min / 60;
+        var m = min % 60;
+        return m == 0 ? $"{h} س" : $"{h} س {m} د";
+    }
+
+    private static string GetStatusClass(string s) => s switch
+    {
+        "Draft" => "status-draft", "PendingReview" => "status-pending",
+        "Published" => "status-published", "Rejected" => "status-rejected", _ => "status-draft"
+    };
+}

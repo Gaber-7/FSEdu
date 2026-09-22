@@ -1,0 +1,111 @@
+@page "/admin/courses/pending"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+
+<PageTitle>مراجعة الدورات — Admin</PageTitle>
+
+<div class="admin-page">
+    <div class="fs-container">
+        <div class="admin-head">
+            <div>
+                <h1>📚 الدورات بانتظار الموافقة</h1>
+                <p class="fs-text-muted">راجع محتوى كل دورة قبل نشرها</p>
+            </div>
+            <button class="fs-btn fs-btn-outline" @onclick="Load">🔄 تحديث</button>
+        </div>
+
+        @if (!_loaded)
+        {
+            <div class="fs-center" style="padding:60px"><span class="fs-spinner"></span></div>
+        }
+        else if (!Auth.IsAuthenticated || !Auth.IsInRole("Admin"))
+        {
+            <div class="fs-alert fs-alert-error">للمشرفين فقط. <a href="/login">تسجيل الدخول</a></div>
+        }
+        else if (_courses is null || !_courses.Any())
+        {
+            <div class="fs-card fs-center empty">
+                <div style="font-size:64px">✅</div>
+                <h3>لا توجد دورات معلّقة</h3>
+                <p class="fs-text-muted">كل الدورات تمت مراجعتها</p>
+            </div>
+        }
+        else
+        {
+            <div class="fs-grid fs-grid-2">
+                @foreach (var c in _courses)
+                {
+                    <div class="fs-card course-card">
+                        <h3>@c.Title</h3>
+                        <p class="fs-text-muted">@c.SubjectName · @c.StageName</p>
+                        <div class="course-stats">
+                            <span>📖 @c.LessonsCount درس</span>
+                        </div>
+                        <div class="card-actions">
+                            <a href="/courses/@c.Id" target="_blank" class="fs-btn fs-btn-outline fs-btn-sm">👁 معاينة</a>
+                            <button class="fs-btn fs-btn-primary fs-btn-sm" @onclick="() => Approve(c.Id)" disabled="@(_busy == c.Id)">
+                                @if (_busy == c.Id) { <span class="fs-spinner"></span> }
+                                ✓ اعتماد
+                            </button>
+                            <button class="fs-btn fs-btn-outline fs-btn-sm danger-btn" @onclick="() => Reject(c.Id)" disabled="@(_busy == c.Id)">
+                                ✕ رفض
+                            </button>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .admin-page { padding: var(--fs-s-10) 0; min-height: calc(100vh - 72px); }
+    .admin-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--fs-s-6); flex-wrap: wrap; gap: var(--fs-s-3); }
+    .empty { padding: 80px; text-align: center; }
+    .empty h3 { margin: var(--fs-s-3) 0 var(--fs-s-2); }
+    .course-card h3 { margin: 0 0 var(--fs-s-1); font-size: 18px; }
+    .course-card p { margin: 0 0 var(--fs-s-3); font-size: 14px; }
+    .course-stats { font-size: 13px; color: var(--fs-text-muted); margin-bottom: var(--fs-s-3); }
+    .card-actions { display: flex; gap: var(--fs-s-2); margin-top: var(--fs-s-3); padding-top: var(--fs-s-3); border-top: 1px solid var(--fs-border); }
+    .card-actions .fs-btn { flex: 1; }
+    .danger-btn { color: var(--fs-danger); border-color: var(--fs-danger); }
+    .danger-btn:hover { background: var(--fs-danger); color: white !important; }
+</style>
+
+@code {
+    private List<FSEdu.Shared.Contracts.Courses.CourseListItemDto>? _courses;
+    private bool _loaded;
+    private Guid? _busy;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            await Load();
+        }
+    }
+
+    private async Task Load()
+    {
+        if (!Auth.IsAuthenticated || !Auth.IsInRole("Admin")) { StateHasChanged(); return; }
+        try { _courses = await Api.GetPendingCoursesAsync(); }
+        catch { _courses = new(); }
+        _loaded = true; StateHasChanged();
+    }
+
+    private async Task Approve(Guid id)
+    {
+        _busy = id; StateHasChanged();
+        try { if (await Api.ApproveCourseAsync(id)) await Load(); }
+        finally { _busy = null; }
+    }
+
+    private async Task Reject(Guid id)
+    {
+        _busy = id; StateHasChanged();
+        try { if (await Api.RejectCourseAsync(id, "Rejected by admin")) await Load(); }
+        finally { _busy = null; }
+    }
+}

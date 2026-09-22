@@ -1,0 +1,195 @@
+@page "/student/stats"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject NavigationManager Nav
+
+<PageTitle>إحصائيات تعلّمي</PageTitle>
+
+<div class="st-page">
+    <div class="fs-container">
+        <header class="st-head">
+            <h1>📊 إحصائيات تعلّمي</h1>
+            <p class="fs-text-muted">دقائق المشاهدة، نسبة الإجابات الصحيحة، وتوزّع نشاطك بالمادة وبالتاريخ.</p>
+        </header>
+
+        @if (!_loaded)
+        {
+            <div class="fs-center" style="padding:80px"><span class="fs-spinner"></span></div>
+        }
+        else if (_data is null)
+        {
+            <div class="fs-alert fs-alert-error">تعذّر التحميل</div>
+        }
+        else
+        {
+            <div class="st-kpi-row">
+                <div class="st-kpi fs-card">
+                    <span class="st-kpi-icon">⏱️</span>
+                    <strong>@FormatMinutes(_data.TotalWatchedMinutes)</strong>
+                    <small>إجمالي المشاهدة</small>
+                </div>
+                <div class="st-kpi fs-card">
+                    <span class="st-kpi-icon">📅</span>
+                    <strong>@FormatMinutes(_data.MinutesLast7Days)</strong>
+                    <small>آخر 7 أيام</small>
+                </div>
+                <div class="st-kpi fs-card">
+                    <span class="st-kpi-icon">🗓️</span>
+                    <strong>@FormatMinutes(_data.MinutesLast30Days)</strong>
+                    <small>آخر 30 يوم</small>
+                </div>
+                <div class="st-kpi fs-card">
+                    <span class="st-kpi-icon">📝</span>
+                    <strong>@_data.AssessmentsSubmitted</strong>
+                    <small>اختبار مُقدَّم</small>
+                </div>
+                <div class="st-kpi fs-card @ScoreClass(_data.CorrectAnswerPct)">
+                    <span class="st-kpi-icon">🎯</span>
+                    <strong>@_data.CorrectAnswerPct.ToString("0.#")%</strong>
+                    <small>نسبة الإجابات الصحيحة</small>
+                </div>
+                <div class="st-kpi fs-card">
+                    <span class="st-kpi-icon">🏆</span>
+                    <strong>@_data.HighScoreCount</strong>
+                    <small>أداء ممتاز (≥90%)</small>
+                </div>
+            </div>
+
+            <div class="fs-card st-section">
+                <h3>📚 توزيع المشاهدة بالمادة</h3>
+                @if (_data.BySubject.Length == 0)
+                {
+                    <p class="fs-text-muted">لا توجد بيانات بعد. ابدأ بمشاهدة درس!</p>
+                }
+                else
+                {
+                    var maxMins = _data.BySubject.Max(s => s.WatchedMinutes);
+                    if (maxMins == 0) maxMins = 1;
+                    <div class="st-subjects">
+                        @foreach (var s in _data.BySubject)
+                        {
+                            var widthPct = (int)(100.0 * s.WatchedMinutes / maxMins);
+                            <div class="st-subj-row">
+                                <div class="st-subj-name">
+                                    <span class="st-color-dot" style="background:@(s.ColorHex ?? "#5B4FE5")"></span>
+                                    <strong>@s.SubjectName</strong>
+                                </div>
+                                <div class="st-subj-bar"><div class="st-subj-fill" style="width:@(widthPct)%; background:@(s.ColorHex ?? "#5B4FE5")"></div></div>
+                                <div class="st-subj-stats">
+                                    <span>⏱ @FormatMinutes(s.WatchedMinutes)</span>
+                                    <span>✅ @s.LessonsCompleted درس</span>
+                                    @if (s.AssessmentsSubmitted > 0)
+                                    {
+                                        <span class="@ScoreClass(s.AvgScorePct)">📝 @s.AvgScorePct.ToString("0.#")%</span>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+
+            <div class="fs-card st-section">
+                <h3>📈 نشاطك آخر 30 يومًا</h3>
+                @if (_data.ByDate.Length == 0)
+                {
+                    <p class="fs-text-muted">لا توجد بيانات في الـ 30 يومًا الماضية.</p>
+                }
+                else
+                {
+                    var maxDayMins = _data.ByDate.Max(d => d.WatchedMinutes);
+                    if (maxDayMins == 0) maxDayMins = 1;
+                    <div class="st-timeline">
+                        @foreach (var d in _data.ByDate)
+                        {
+                            var hPct = (int)(100.0 * d.WatchedMinutes / maxDayMins);
+                            <div class="st-day" title="@d.DateLocal.ToString("yyyy/MM/dd") · @FormatMinutes(d.WatchedMinutes) · @d.LessonsViewed درس">
+                                <div class="st-day-bar" style="height: @(Math.Max(hPct, 3))%"></div>
+                                <small>@d.DateLocal.Day</small>
+                            </div>
+                        }
+                    </div>
+                    <small class="st-timeline-legend">كل عمود يومٌ — مرّر فوقه لعرض التفاصيل</small>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .st-page { padding: var(--fs-s-8) 0; min-height: calc(100vh - 72px); }
+    .st-head { margin-bottom: var(--fs-s-4); }
+    .st-head h1 { margin: 0 0 var(--fs-s-1); font-size: 26px; }
+
+    .st-kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--fs-s-3); margin-bottom: var(--fs-s-4); }
+    .st-kpi { padding: var(--fs-s-3); text-align: center; }
+    .st-kpi-icon { font-size: 24px; display: block; margin-bottom: 4px; }
+    .st-kpi strong { display: block; font-size: 22px; font-weight: 800; color: var(--fs-primary); }
+    .st-kpi small { font-size: 12px; color: var(--fs-text-muted); }
+    .st-kpi.high strong { color: var(--fs-success); }
+    .st-kpi.mid strong { color: #B56E00; }
+    .st-kpi.low strong { color: var(--fs-danger); }
+
+    .st-section { padding: var(--fs-s-5); margin-bottom: var(--fs-s-4); }
+    .st-section h3 { margin: 0 0 var(--fs-s-3); }
+
+    .st-subjects { display: flex; flex-direction: column; gap: var(--fs-s-3); }
+    .st-subj-row { display: grid; grid-template-columns: 180px 1fr auto; align-items: center; gap: var(--fs-s-3); }
+    .st-subj-name { display: flex; align-items: center; gap: var(--fs-s-2); }
+    .st-color-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .st-subj-bar { height: 8px; background: var(--fs-bg); border-radius: 4px; overflow: hidden; }
+    .st-subj-fill { height: 100%; transition: width var(--fs-trans); }
+    .st-subj-stats { display: flex; gap: var(--fs-s-3); font-size: 12px; color: var(--fs-text-muted); flex-wrap: wrap; }
+    .st-subj-stats .high { color: var(--fs-success); font-weight: 700; }
+    .st-subj-stats .mid { color: #B56E00; font-weight: 700; }
+    .st-subj-stats .low { color: var(--fs-danger); font-weight: 700; }
+
+    .st-timeline { display: flex; align-items: flex-end; gap: 6px; height: 160px; padding: var(--fs-s-2); background: var(--fs-bg); border-radius: var(--fs-r-md); overflow-x: auto; }
+    .st-day { display: flex; flex-direction: column; align-items: center; min-width: 22px; height: 100%; justify-content: flex-end; cursor: help; }
+    .st-day-bar { width: 14px; background: linear-gradient(180deg, var(--fs-primary), var(--fs-secondary)); border-radius: 3px 3px 0 0; }
+    .st-day small { font-size: 10px; color: var(--fs-text-muted); margin-top: 4px; }
+    .st-timeline-legend { display: block; margin-top: var(--fs-s-2); color: var(--fs-text-muted); }
+
+    @@media (max-width: 700px) {
+        .st-subj-row { grid-template-columns: 1fr; }
+        .st-subj-bar { display: none; }
+    }
+</style>
+
+@code {
+    private FSEdu.Shared.Contracts.Courses.StudentDetailedStatsDto? _data;
+    private bool _loaded;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            if (Auth.CurrentUser is null || !Auth.IsInRole("Student"))
+            {
+                Nav.NavigateTo("/login");
+                return;
+            }
+            _data = await Api.GetMyDetailedStatsAsync();
+            _loaded = true;
+            StateHasChanged();
+        }
+    }
+
+    private static string FormatMinutes(int minutes)
+    {
+        if (minutes < 60) return $"{minutes} د";
+        var h = minutes / 60;
+        var m = minutes % 60;
+        return m == 0 ? $"{h} س" : $"{h} س {m} د";
+    }
+
+    private static string ScoreClass(decimal pct) => pct switch
+    {
+        >= 75 => "high",
+        >= 50 => "mid",
+        > 0   => "low",
+        _ => ""
+    };
+}

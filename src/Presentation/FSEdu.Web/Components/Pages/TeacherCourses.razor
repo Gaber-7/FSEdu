@@ -1,0 +1,200 @@
+@page "/teacher/courses"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject NavigationManager Nav
+
+<PageTitle>دوراتي — المدرس</PageTitle>
+
+<div class="tc-page">
+    <div class="fs-container">
+        <div class="tc-head">
+            <div>
+                <h1>📚 دوراتي</h1>
+                <p class="fs-text-muted">أنشئ وأدر دوراتك التعليمية</p>
+            </div>
+            <a href="/teacher/courses/new" class="fs-btn fs-btn-primary">+ دورة جديدة</a>
+        </div>
+
+        @if (!_loaded)
+        {
+            <div class="fs-center" style="padding:60px"><span class="fs-spinner"></span></div>
+        }
+        else if (!Auth.IsAuthenticated || !Auth.IsInRole("Teacher"))
+        {
+            <div class="fs-alert fs-alert-error">هذه الصفحة للمدرسين فقط. <a href="/login">تسجيل الدخول</a></div>
+        }
+        else if (_courses is null || !_courses.Any())
+        {
+            <div class="fs-card fs-center empty">
+                <div style="font-size:64px">📖</div>
+                <h3>لا توجد دورات بعد</h3>
+                <p class="fs-text-muted">أنشئ أول دورة لك وابدأ تعليم الطلاب</p>
+                <a href="/teacher/courses/new" class="fs-btn fs-btn-primary">إنشاء دورة</a>
+            </div>
+        }
+        else
+        {
+            <div class="fs-grid fs-grid-3">
+                @foreach (var c in _courses)
+                {
+                    <div class="fs-card course-card">
+                        <div class="course-thumb">
+                            @if (!string.IsNullOrEmpty(c.ThumbnailUrl))
+                            {
+                                <img src="@c.ThumbnailUrl" alt="@c.Title" />
+                            }
+                            else
+                            {
+                                <span class="thumb-icon">📚</span>
+                            }
+                            <span class="status-badge @GetStatusClass(c.Status)">@StatusLabel(c.Status)</span>
+                        </div>
+                        <div class="course-body">
+                            <h3>@c.Title</h3>
+                            <p class="fs-text-muted">@c.SubjectName · @c.StageName</p>
+                            <div class="course-stats">
+                                <span>📖 @c.LessonsCount درس</span>
+                                <span>👥 @c.EnrollmentCount طالب</span>
+                                @if (c.RatingAvg > 0) { <span>⭐ @c.RatingAvg</span> }
+                            </div>
+                            <div class="tc-actions">
+                                <a href="/teacher/courses/@c.Id/edit" class="fs-btn fs-btn-outline">
+                                    تعديل المحتوى ←
+                                </a>
+                                <a href="/teacher/courses/@c.Id/insights" class="fs-btn fs-btn-ghost fs-btn-sm tc-dup-btn"
+                                   title="تحليلات الدورة">
+                                    📊
+                                </a>
+                                <a href="/teacher/courses/@c.Id/roster" class="fs-btn fs-btn-ghost fs-btn-sm tc-dup-btn"
+                                   title="قائمة الطلاب">
+                                    👥
+                                </a>
+                                <button class="fs-btn fs-btn-ghost fs-btn-sm tc-dup-btn"
+                                        title="استنسخ كقالب لتَرم جديد"
+                                        @onclick="() => DuplicateCourse(c.Id, c.Title)"
+                                        disabled="@(_busyDup.Contains(c.Id))">
+                                    @(_busyDup.Contains(c.Id) ? "..." : "📑")
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(_dupMessage))
+        {
+            <div class="fs-alert fs-alert-success tc-toast">
+                @_dupMessage
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .tc-page { padding: var(--fs-s-10) 0; min-height: calc(100vh - 72px); }
+    .tc-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--fs-s-8); flex-wrap: wrap; gap: var(--fs-s-3); }
+    .empty { padding: 80px; text-align: center; }
+    .empty h3 { margin: var(--fs-s-3) 0 var(--fs-s-2); }
+    .empty .fs-btn { margin-top: var(--fs-s-4); }
+    .course-card { padding: 0; overflow: hidden; }
+    .course-thumb {
+        height: 160px; position: relative;
+        background: linear-gradient(135deg, var(--fs-primary-soft), var(--fs-secondary-soft));
+        display: flex; align-items: center; justify-content: center;
+    }
+    .course-thumb img { width: 100%; height: 100%; object-fit: cover; }
+    .thumb-icon { font-size: 64px; }
+    .status-badge {
+        position: absolute; top: var(--fs-s-3); right: var(--fs-s-3);
+        padding: 4px 10px; border-radius: var(--fs-r-full);
+        font-size: 12px; font-weight: 700; background: white;
+    }
+    .status-draft { color: var(--fs-text-muted); }
+    .status-pending { color: #B56E00; background: var(--fs-accent-soft); }
+    .status-published { color: var(--fs-success); background: #D1FAE5; }
+    .status-rejected { color: var(--fs-danger); background: #FEE2E2; }
+    .course-body { padding: var(--fs-s-4); }
+    .course-body h3 { font-size: 17px; margin: 0 0 var(--fs-s-1); }
+    .course-body p { margin: 0 0 var(--fs-s-3); font-size: 13px; }
+    .course-stats { display: flex; gap: var(--fs-s-3); font-size: 13px; color: var(--fs-text-muted); margin-bottom: var(--fs-s-3); }
+    .tc-actions { display: flex; gap: var(--fs-s-2); }
+    .tc-actions .fs-btn { flex: 1; }
+    .tc-dup-btn { flex: 0 0 auto !important; }
+    .tc-toast {
+        position: fixed; bottom: var(--fs-s-5); left: 50%; transform: translateX(-50%);
+        z-index: 250; box-shadow: var(--fs-sh-lg);
+        animation: tc-toast-in 200ms ease;
+    }
+    @@keyframes tc-toast-in {
+        from { opacity: 0; transform: translate(-50%, 20px); }
+        to { opacity: 1; transform: translate(-50%, 0); }
+    }
+</style>
+
+@code {
+    private List<FSEdu.Shared.Contracts.Courses.CourseListItemDto>? _courses;
+    private bool _loaded;
+    private HashSet<Guid> _busyDup = new();
+    private string? _dupMessage;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            if (Auth.IsAuthenticated && Auth.IsInRole("Teacher"))
+            {
+                try { _courses = await Api.GetMyTeacherCoursesAsync(); }
+                catch { _courses = new(); }
+            }
+            _loaded = true; StateHasChanged();
+        }
+    }
+
+    private async Task DuplicateCourse(Guid courseId, string courseTitle)
+    {
+        _busyDup.Add(courseId); _dupMessage = null; StateHasChanged();
+        try
+        {
+            var (newId, err) = await Api.DuplicateCourseAsync(courseId);
+            if (err is not null)
+            {
+                _dupMessage = err.Message ?? "تعذّر النسخ";
+                return;
+            }
+            _dupMessage = $"✓ تم استنساخ الدورة \"{courseTitle}\" كمسوّدة جديدة";
+            try { _courses = await Api.GetMyTeacherCoursesAsync(); }
+            catch { }
+
+            // Auto-dismiss the toast after 4 seconds.
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(4000);
+                _dupMessage = null;
+                await InvokeAsync(StateHasChanged);
+            });
+        }
+        finally { _busyDup.Remove(courseId); StateHasChanged(); }
+    }
+
+    private static string StatusLabel(string s) => s switch
+    {
+        "Draft" => "مسودة",
+        "PendingReview" => "بانتظار الموافقة",
+        "Published" => "منشورة",
+        "Rejected" => "مرفوضة",
+        "Archived" => "أرشيف",
+        _ => s
+    };
+
+    private static string GetStatusClass(string s) => s switch
+    {
+        "Draft" => "status-draft",
+        "PendingReview" => "status-pending",
+        "Published" => "status-published",
+        "Rejected" => "status-rejected",
+        _ => "status-draft"
+    };
+}

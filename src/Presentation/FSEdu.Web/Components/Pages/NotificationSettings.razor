@@ -1,0 +1,169 @@
+@page "/settings/notifications"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject NavigationManager Nav
+
+<PageTitle>إعدادات الإشعارات</PageTitle>
+
+<div class="ns-page">
+    <div class="fs-container">
+        <header class="ns-head">
+            <h1>🔔 إعدادات الإشعارات</h1>
+            <p class="fs-text-muted">حدّد الأنواع التي تريد استقبالها. الإشعارات المُلغاة لن تُرسَل لك في التطبيق ولا في الـ push.</p>
+        </header>
+
+        @if (!_loaded)
+        {
+            <div class="fs-center" style="padding:80px"><span class="fs-spinner"></span></div>
+        }
+        else if (_items.Count == 0)
+        {
+            <div class="fs-alert fs-alert-error">تعذّر التحميل</div>
+        }
+        else
+        {
+            <div class="ns-list">
+                @foreach (var p in _items)
+                {
+                    <article class="ns-row fs-card @(p.Enabled ? "on" : "off")">
+                        <span class="ns-emoji">@p.Emoji</span>
+                        <div class="ns-info">
+                            <strong>@p.TitleAr</strong>
+                            @if (!string.IsNullOrEmpty(p.DescriptionAr))
+                            {
+                                <small>@p.DescriptionAr</small>
+                            }
+                        </div>
+                        <label class="ns-toggle">
+                            <input type="checkbox" checked="@p.Enabled"
+                                   @onchange="@((ChangeEventArgs e) => Toggle(p.Category, (bool)(e.Value ?? false)))"
+                                   disabled="@_busy.Contains(p.Category)" />
+                            <span class="ns-slider"></span>
+                        </label>
+                    </article>
+                }
+            </div>
+
+            @if (!string.IsNullOrEmpty(_toast))
+            {
+                <div class="fs-alert fs-alert-success ns-toast">@_toast</div>
+            }
+        }
+    </div>
+</div>
+
+<style>
+    .ns-page { padding: var(--fs-s-8) 0; min-height: calc(100vh - 72px); }
+    .ns-head { margin-bottom: var(--fs-s-5); }
+    .ns-head h1 { margin: 0 0 var(--fs-s-1); font-size: 26px; }
+
+    .ns-list { display: flex; flex-direction: column; gap: var(--fs-s-2); }
+    .ns-row {
+        display: flex; align-items: center; gap: var(--fs-s-4);
+        padding: var(--fs-s-4);
+        border-right: 4px solid var(--fs-border);
+        transition: all var(--fs-trans);
+    }
+    .ns-row.on { border-right-color: var(--fs-primary); }
+    .ns-row.off { border-right-color: var(--fs-text-muted); opacity: 0.7; }
+
+    .ns-emoji {
+        width: 48px; height: 48px; border-radius: 50%;
+        background: var(--fs-primary-soft);
+        display: flex; align-items: center; justify-content: center;
+        font-size: 24px; flex-shrink: 0;
+    }
+    .ns-row.off .ns-emoji { background: var(--fs-bg); }
+
+    .ns-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+    .ns-info strong { font-size: 15px; }
+    .ns-info small { font-size: 13px; color: var(--fs-text-muted); }
+
+    /* iOS-style toggle */
+    .ns-toggle {
+        position: relative; display: inline-block;
+        width: 50px; height: 28px;
+        flex-shrink: 0;
+    }
+    .ns-toggle input { opacity: 0; width: 0; height: 0; }
+    .ns-slider {
+        position: absolute; cursor: pointer;
+        inset: 0;
+        background: #CBD5E1;
+        border-radius: 14px;
+        transition: var(--fs-trans);
+    }
+    .ns-slider::before {
+        content: '';
+        position: absolute; height: 22px; width: 22px;
+        right: 3px; top: 3px;
+        background: white;
+        border-radius: 50%;
+        transition: var(--fs-trans);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+    .ns-toggle input:checked + .ns-slider { background: var(--fs-primary); }
+    .ns-toggle input:checked + .ns-slider::before { right: 25px; }
+    .ns-toggle input:disabled + .ns-slider { opacity: 0.5; cursor: wait; }
+
+    .ns-toast {
+        position: fixed; bottom: var(--fs-s-5); left: 50%; transform: translateX(-50%);
+        z-index: 250; box-shadow: var(--fs-sh-lg);
+        animation: ns-toast-in 200ms ease;
+    }
+    @@keyframes ns-toast-in {
+        from { opacity: 0; transform: translate(-50%, 20px); }
+        to { opacity: 1; transform: translate(-50%, 0); }
+    }
+</style>
+
+@code {
+    private List<FSEdu.Shared.Contracts.Auth.NotificationPreferenceDto> _items = new();
+    private bool _loaded;
+    private HashSet<string> _busy = new();
+    private string? _toast;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            if (Auth.CurrentUser is null)
+            {
+                Nav.NavigateTo("/login");
+                return;
+            }
+            await Load();
+        }
+    }
+
+    private async Task Load()
+    {
+        _items = await Api.GetNotificationPreferencesAsync();
+        _loaded = true;
+        StateHasChanged();
+    }
+
+    private async Task Toggle(string category, bool enabled)
+    {
+        _busy.Add(category); StateHasChanged();
+        try
+        {
+            var ok = await Api.SetNotificationPreferenceAsync(category, enabled);
+            if (ok)
+            {
+                var idx = _items.FindIndex(p => p.Category == category);
+                if (idx >= 0) _items[idx] = _items[idx] with { Enabled = enabled };
+                _toast = enabled ? "✓ تم تفعيل التنبيهات" : "✓ تم إيقاف التنبيهات";
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(2500);
+                    _toast = null;
+                    await InvokeAsync(StateHasChanged);
+                });
+            }
+        }
+        finally { _busy.Remove(category); StateHasChanged(); }
+    }
+}

@@ -1,0 +1,202 @@
+@page "/login"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject NavigationManager Nav
+
+<PageTitle>تسجيل الدخول — FSEdu</PageTitle>
+
+<div class="auth-wrapper">
+    <div class="fs-container">
+        <div class="auth-card fs-card fs-card-elevated">
+            <div class="auth-head">
+                <h1>أهلاً بعودتك 👋</h1>
+                <p class="fs-text-muted">سجّل الدخول للمتابعة في رحلتك التعليمية</p>
+            </div>
+
+            @if (!string.IsNullOrEmpty(_errorMessage))
+            {
+                <div class="fs-alert fs-alert-error">
+                    <span>⚠️</span>
+                    <span>@_errorMessage</span>
+                </div>
+            }
+
+            @if (!_twoFactorPrompt)
+            {
+                <EditForm Model="@_form" OnValidSubmit="HandleLogin" FormName="Login">
+                    <DataAnnotationsValidator />
+
+                    <div class="fs-form-group">
+                        <label class="fs-label">رقم الهاتف</label>
+                        <InputText class="fs-input fs-input-phone" @bind-Value="_form.Phone" placeholder="+201012345678" />
+                        <ValidationMessage For="() => _form.Phone" />
+                    </div>
+
+                    <div class="fs-form-group">
+                        <label class="fs-label">كلمة المرور</label>
+                        <InputText type="password" class="fs-input" @bind-Value="_form.Password" placeholder="••••••••" />
+                        <ValidationMessage For="() => _form.Password" />
+                    </div>
+
+                    <div class="auth-extra">
+                        <a href="/forgot-password">نسيت كلمة المرور؟</a>
+                    </div>
+
+                    <button type="submit" class="fs-btn fs-btn-primary fs-btn-lg fs-btn-block" disabled="@_loading">
+                        @if (_loading)
+                        {
+                            <span class="fs-spinner"></span>
+                            <span>جارٍ الدخول...</span>
+                        }
+                        else
+                        {
+                            <span>تسجيل الدخول</span>
+                        }
+                    </button>
+
+                    <div class="auth-alt">
+                        ليس لديك حساب؟ <a href="/register">إنشاء حساب جديد</a>
+                    </div>
+                </EditForm>
+            }
+            else
+            {
+                <div class="totp-step">
+                    <div class="totp-icon">🔐</div>
+                    <h2>المصادقة الثنائية</h2>
+                    <p class="fs-text-muted">
+                        افتح تطبيق المصادقة (Google Authenticator / Authy ...) وأدخل الرمز،
+                        أو استخدم أحد رموز الاسترداد المحفوظة.
+                    </p>
+                    <input type="text" class="fs-input totp-input" inputmode="numeric"
+                           placeholder="000000 أو XXXX-XXXX-XXXX-XXXX"
+                           @bind="_totpCode" @bind:event="oninput"
+                           @onkeydown="OnTotpKey" />
+                    <button class="fs-btn fs-btn-primary fs-btn-lg fs-btn-block" @onclick="SubmitTotp" disabled="@_loading">
+                        @if (_loading) { <span class="fs-spinner"></span><span>جارٍ التحقق...</span> }
+                        else { <span>تأكيد ودخول</span> }
+                    </button>
+                    <button class="fs-btn fs-btn-ghost fs-btn-block" type="button" @onclick="CancelTotp">رجوع</button>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+<style>
+    .auth-wrapper {
+        padding: 60px 0;
+        min-height: calc(100vh - 72px);
+        display: flex; align-items: flex-start;
+        background:
+            radial-gradient(at 10% 0%, var(--fs-primary-soft) 0%, transparent 50%),
+            radial-gradient(at 90% 100%, var(--fs-secondary-soft) 0%, transparent 50%);
+    }
+
+    .auth-card { max-width: 460px; margin: 0 auto; }
+    .auth-head { text-align: center; margin-bottom: var(--fs-s-8); }
+    .auth-head h1 { font-size: 28px; margin-bottom: var(--fs-s-2); }
+
+    .auth-extra {
+        display: flex; justify-content: flex-start;
+        margin-bottom: var(--fs-s-4);
+    }
+
+    .auth-extra a { font-size: 14px; color: var(--fs-primary); }
+
+    .auth-alt {
+        text-align: center;
+        margin-top: var(--fs-s-6);
+        color: var(--fs-text-muted);
+        font-size: 14px;
+    }
+
+    .totp-step { text-align: center; padding: var(--fs-s-4) 0; }
+    .totp-step h2 { margin: var(--fs-s-3) 0 var(--fs-s-2); }
+    .totp-icon { font-size: 56px; }
+    .totp-input {
+        text-align: center; font-size: 18px;
+        letter-spacing: 4px; font-weight: 700;
+        margin: var(--fs-s-4) 0;
+    }
+</style>
+
+@code {
+    private FormModel _form = new();
+    private string? _errorMessage;
+    private bool _loading;
+    private bool _twoFactorPrompt;
+    private string _totpCode = "";
+
+    private async Task HandleLogin()
+    {
+        _errorMessage = null; _loading = true;
+        try { await DoLogin(null); }
+        finally { _loading = false; }
+    }
+
+    private async Task SubmitTotp()
+    {
+        if (string.IsNullOrWhiteSpace(_totpCode))
+        { _errorMessage = "أدخل الرمز"; return; }
+        _errorMessage = null; _loading = true;
+        try { await DoLogin(_totpCode.Trim()); }
+        finally { _loading = false; }
+    }
+
+    private async Task DoLogin(string? totpCode)
+    {
+        try
+        {
+            var (data, error) = await Api.LoginAsync(
+                new FSEdu.Shared.Contracts.Auth.LoginRequest(_form.Phone, _form.Password, totpCode));
+            if (error is not null) { _errorMessage = error.Message; return; }
+            if (data is null) { _errorMessage = "لم يتم استلام بيانات الحساب"; return; }
+
+            if (data.TwoFactorRequired)
+            {
+                _twoFactorPrompt = true;
+                _totpCode = "";
+                StateHasChanged();
+                return;
+            }
+
+            await Auth.SaveAsync(data);
+
+            var role = data.User.Roles.FirstOrDefault();
+            var redirectUrl = role switch
+            {
+                "Admin"      => "/admin/dashboard",
+                "Parent"     => "/parent/children",
+                "Teacher"    => "/dashboard/teacher",
+                "Student"    => "/dashboard/student",
+                _            => "/"
+            };
+            Nav.NavigateTo(redirectUrl);
+        }
+        catch (Exception ex) { _errorMessage = "خطأ: " + ex.Message; }
+    }
+
+    private async Task OnTotpKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await SubmitTotp();
+    }
+
+    private void CancelTotp()
+    {
+        _twoFactorPrompt = false;
+        _totpCode = "";
+        _errorMessage = null;
+    }
+
+    private class FormModel
+    {
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "رقم الهاتف مطلوب")]
+        [System.ComponentModel.DataAnnotations.RegularExpression(@"^\+[1-9]\d{7,14}$", ErrorMessage = "صيغة رقم الهاتف غير صحيحة")]
+        public string Phone { get; set; } = "";
+
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "كلمة المرور مطلوبة")]
+        public string Password { get; set; } = "";
+    }
+}

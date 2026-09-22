@@ -1,0 +1,205 @@
+@page "/leaderboard"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+
+<PageTitle>قائمة المتصدّرين — FSEdu</PageTitle>
+
+<div class="lb-page">
+    <div class="fs-container">
+        <div class="page-head">
+            <h1>🏆 قائمة المتصدّرين</h1>
+            <p class="fs-text-muted">أفضل الطلاب من حيث نقاط XP والإنجازات</p>
+        </div>
+
+        <div class="filters fs-card">
+            <label>
+                <input type="radio" name="filter" checked="@(_stageFilter == null)" @onchange="() => SetStage(null)" />
+                <span>كل المراحل</span>
+            </label>
+            @if (_stages is not null)
+            {
+                @foreach (var s in _stages.Take(6))
+                {
+                    var stageId = s.Id;
+                    <label>
+                        <input type="radio" name="filter" checked="@(_stageFilter == stageId)" @onchange="() => SetStage(stageId)" />
+                        <span>@s.NameAr</span>
+                    </label>
+                }
+            }
+        </div>
+
+        @if (!_loaded)
+        {
+            <div class="fs-center" style="padding:60px"><span class="fs-spinner"></span></div>
+        }
+        else if (_entries is null || !_entries.Any())
+        {
+            <div class="fs-card fs-center empty">
+                <div style="font-size:64px">📊</div>
+                <h3>لا يوجد طلاب بعد</h3>
+            </div>
+        }
+        else
+        {
+            @if (_entries.Count >= 3)
+            {
+                <div class="podium">
+                    <div class="podium-item second">
+                        <div class="medal">🥈</div>
+                        <div class="podium-avatar">@_entries[1].FullName.FirstOrDefault()</div>
+                        <strong>@_entries[1].FullName</strong>
+                        <span>@_entries[1].XpPoints XP</span>
+                    </div>
+                    <div class="podium-item first">
+                        <div class="medal big">🥇</div>
+                        <div class="podium-avatar gold">@_entries[0].FullName.FirstOrDefault()</div>
+                        <strong>@_entries[0].FullName</strong>
+                        <span>@_entries[0].XpPoints XP</span>
+                    </div>
+                    <div class="podium-item third">
+                        <div class="medal">🥉</div>
+                        <div class="podium-avatar">@_entries[2].FullName.FirstOrDefault()</div>
+                        <strong>@_entries[2].FullName</strong>
+                        <span>@_entries[2].XpPoints XP</span>
+                    </div>
+                </div>
+            }
+
+            <div class="lb-list">
+                @foreach (var e in _entries.Skip(3))
+                {
+                    <div class="lb-row fs-card @(e.IsMe ? "me" : "")">
+                        <div class="rank">#@e.Rank</div>
+                        <div class="avatar">@e.FullName.FirstOrDefault()</div>
+                        <div class="info">
+                            <strong>@e.FullName @(e.IsMe ? " (أنت)" : "")</strong>
+                            <small>@e.StageName</small>
+                        </div>
+                        <div class="stats">
+                            <span title="نقاط XP"><strong>@e.XpPoints</strong> XP</span>
+                            @if (e.CurrentStreakDays > 0)
+                            {
+                                <span title="أيام متواصلة">🔥 @e.CurrentStreakDays</span>
+                            }
+                            @if (e.BadgesCount > 0)
+                            {
+                                <span title="الشارات">🏆 @e.BadgesCount</span>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .lb-page { padding: var(--fs-s-10) 0; min-height: calc(100vh - 72px); }
+    .page-head { text-align: center; margin-bottom: var(--fs-s-6); }
+    .page-head h1 { font-size: clamp(2rem, 4vw, 2.5rem); }
+
+    .filters {
+        display: flex; gap: var(--fs-s-3); flex-wrap: wrap;
+        padding: var(--fs-s-3); margin-bottom: var(--fs-s-6);
+    }
+    .filters label {
+        display: flex; align-items: center; gap: 6px;
+        padding: 6px 12px; cursor: pointer;
+        background: var(--fs-bg); border-radius: var(--fs-r-full);
+        font-size: 13px; font-weight: 600;
+    }
+    .filters label:has(input:checked) { background: var(--fs-primary); color: white; }
+
+    .empty { padding: 80px; text-align: center; }
+
+    .podium {
+        display: grid; grid-template-columns: 1fr 1fr 1fr;
+        align-items: end; gap: var(--fs-s-3);
+        margin: var(--fs-s-8) auto var(--fs-s-8);
+        max-width: 720px;
+    }
+    .podium-item {
+        text-align: center; padding: var(--fs-s-4);
+        background: var(--fs-surface); border-radius: var(--fs-r-lg);
+        border: 1px solid var(--fs-border);
+    }
+    .podium-item.first { transform: translateY(-20px); border-color: #FFD700; box-shadow: 0 0 30px rgba(255,215,0,0.2); }
+    .podium-item.second { transform: translateY(20px); }
+    .podium-item.third { transform: translateY(40px); }
+    .medal { font-size: 36px; margin-bottom: var(--fs-s-2); }
+    .medal.big { font-size: 56px; }
+    .podium-avatar {
+        width: 64px; height: 64px; border-radius: 50%;
+        background: linear-gradient(135deg, var(--fs-primary), var(--fs-secondary));
+        color: white; font-weight: 800; font-size: 24px;
+        display: flex; align-items: center; justify-content: center;
+        margin: 0 auto var(--fs-s-2);
+    }
+    .podium-avatar.gold {
+        background: linear-gradient(135deg, #FFD700, #FFA500);
+        width: 80px; height: 80px; font-size: 32px;
+    }
+    .podium-item strong { display: block; font-size: 14px; margin-bottom: 4px; }
+    .podium-item span { font-size: 14px; color: var(--fs-primary); font-weight: 700; }
+
+    .lb-list { display: flex; flex-direction: column; gap: var(--fs-s-2); }
+    .lb-row {
+        display: flex; align-items: center; gap: var(--fs-s-3);
+        padding: var(--fs-s-3);
+    }
+    .lb-row.me { background: linear-gradient(to right, var(--fs-primary-soft), transparent); border-color: var(--fs-primary); }
+    .rank { font-size: 18px; font-weight: 800; color: var(--fs-text-muted); min-width: 40px; }
+    .lb-row.me .rank { color: var(--fs-primary); }
+    .avatar {
+        width: 40px; height: 40px; border-radius: 50%;
+        background: var(--fs-secondary); color: white;
+        font-weight: 800; display: flex; align-items: center; justify-content: center;
+        flex-shrink: 0;
+    }
+    .info { flex: 1; }
+    .info strong { display: block; font-size: 14px; }
+    .info small { font-size: 12px; color: var(--fs-text-muted); }
+    .stats { display: flex; gap: var(--fs-s-3); font-size: 13px; color: var(--fs-text-muted); }
+    .stats strong { color: var(--fs-primary); font-weight: 800; font-size: 14px; }
+</style>
+
+@code {
+    private List<FSEdu.Shared.Contracts.Gamification.LeaderboardEntryDto>? _entries;
+    private List<FSEdu.Shared.Contracts.Reference.StageDto>? _stages;
+    private int? _stageFilter;
+    private bool _loaded;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var stages = await Api.GetStagesAsync();
+            _stages = stages.Where(s => s.ParentStageId != null).OrderBy(s => s.LevelOrder).ToList();
+        }
+        catch { }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            await Load();
+        }
+    }
+
+    private async Task SetStage(int? stageId)
+    {
+        _stageFilter = stageId;
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        try { _entries = await Api.GetLeaderboardAsync(_stageFilter); }
+        catch { _entries = new(); }
+        _loaded = true; StateHasChanged();
+    }
+}

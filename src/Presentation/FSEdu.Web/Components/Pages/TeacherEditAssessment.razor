@@ -1,0 +1,357 @@
+@page "/teacher/assessments/{AssessmentId:guid}/edit"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject NavigationManager Nav
+
+<PageTitle>تعديل الاختبار</PageTitle>
+
+<div class="edit-page">
+    <div class="fs-container">
+        @if (!_loaded)
+        {
+            <div class="fs-center" style="padding:60px"><span class="fs-spinner"></span></div>
+        }
+        else if (_data is null)
+        {
+            <div class="fs-alert fs-alert-error">الاختبار غير موجود</div>
+        }
+        else
+        {
+            <div class="edit-head">
+                <div>
+                    <a href="/teacher/courses/@_data.CourseId/edit" class="fs-text-muted" style="font-size:14px">
+                        ← عودة للدورة
+                    </a>
+                    <h1>📝 @_data.Title</h1>
+                    <p class="fs-text-muted">
+                        @TypeLabel(_data.Type) · @_data.Questions.Length سؤال · @_data.TotalMarks درجة إجمالية
+                        @if (_data.TimeLimitMinutes.HasValue) { <text> · ⏱ @_data.TimeLimitMinutes دقيقة</text> }
+                    </p>
+                </div>
+                <button class="fs-btn fs-btn-primary" @onclick="() => _showAddQuestion = true">
+                    + إضافة سؤال
+                </button>
+            </div>
+
+            @if (!string.IsNullOrEmpty(_message))
+            {
+                <div class="fs-alert @(_isError ? "fs-alert-error" : "fs-alert-success")">
+                    <span>@(_isError ? "⚠️" : "✓")</span>
+                    <span>@_message</span>
+                </div>
+            }
+
+            @if (!_data.Questions.Any())
+            {
+                <div class="fs-card fs-center empty">
+                    <div style="font-size:64px">❓</div>
+                    <h3>لا توجد أسئلة بعد</h3>
+                    <p class="fs-text-muted">أضف أول سؤال للاختبار</p>
+                </div>
+            }
+            else
+            {
+                <div class="questions">
+                    @foreach (var q in _data.Questions)
+                    {
+                        <div class="question-card fs-card">
+                            <div class="q-head">
+                                <span class="q-num">@q.OrderNum</span>
+                                <div class="q-info">
+                                    <strong>@q.QuestionText</strong>
+                                    <small>
+                                        @TypeLabel2(q.Type) · @q.Marks درجة · @DiffLabel(q.Difficulty)
+                                    </small>
+                                </div>
+                                <button class="fs-btn fs-btn-ghost fs-btn-sm delete-btn"
+                                        @onclick="() => DeleteQuestion(q.Id)"
+                                        disabled="@(_deletingId == q.Id)">
+                                    🗑️
+                                </button>
+                            </div>
+                            @if (q.Type == "MultipleChoice" && q.Options is not null)
+                            {
+                                <div class="options-preview">
+                                    @for (var i = 0; i < q.Options.Length; i++)
+                                    {
+                                        var idx = i;
+                                        var isCorrect = q.CorrectOptionIndex == idx;
+                                        <div class="option @(isCorrect ? "correct" : "")">
+                                            @(isCorrect ? "✓" : "○") @q.Options[idx]
+                                        </div>
+                                    }
+                                </div>
+                            }
+                            else if (q.Type == "TrueFalse")
+                            {
+                                <div class="options-preview">
+                                    <div class="option @(q.CorrectBoolean == true ? "correct" : "")">
+                                        @(q.CorrectBoolean == true ? "✓" : "○") صحيح
+                                    </div>
+                                    <div class="option @(q.CorrectBoolean == false ? "correct" : "")">
+                                        @(q.CorrectBoolean == false ? "✓" : "○") خطأ
+                                    </div>
+                                </div>
+                            }
+                            @if (!string.IsNullOrEmpty(q.Explanation))
+                            {
+                                <div class="explanation">💡 @q.Explanation</div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        }
+
+        @if (_showAddQuestion)
+        {
+            <div class="modal-backdrop" @onclick="() => _showAddQuestion = false">
+                <div class="modal fs-card fs-card-elevated big" @onclick:stopPropagation="true">
+                    <h3>➕ إضافة سؤال جديد</h3>
+
+                    @if (!string.IsNullOrEmpty(_modalError))
+                    {
+                        <div class="fs-alert fs-alert-error"><span>⚠️</span><span>@_modalError</span></div>
+                    }
+
+                    <div class="fs-form-group">
+                        <label class="fs-label">نوع السؤال</label>
+                        <div class="type-chips">
+                            <button class="type-chip @(_qType == "MultipleChoice" ? "active" : "")"
+                                    @onclick='() => _qType = "MultipleChoice"'>
+                                ⚪ اختيار من متعدد
+                            </button>
+                            <button class="type-chip @(_qType == "TrueFalse" ? "active" : "")"
+                                    @onclick='() => _qType = "TrueFalse"'>
+                                ✓✗ صح / خطأ
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="fs-form-group">
+                        <label class="fs-label">نص السؤال</label>
+                        <textarea class="fs-input" rows="2" @bind="_qText" placeholder="اكتب السؤال هنا..."></textarea>
+                    </div>
+
+                    @if (_qType == "MultipleChoice")
+                    {
+                        <div class="fs-form-group">
+                            <label class="fs-label">الخيارات (اختر الإجابة الصحيحة)</label>
+                            @for (var i = 0; i < 4; i++)
+                            {
+                                var idx = i;
+                                <div class="option-input">
+                                    <input type="radio" name="correctOption" value="@idx"
+                                           checked="@(_qCorrectOpt == idx)"
+                                           @onchange="() => _qCorrectOpt = idx" />
+                                    <input class="fs-input" @bind="_qOptions[idx]"
+                                           placeholder="@($"الخيار {idx + 1}")" />
+                                </div>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="fs-form-group">
+                            <label class="fs-label">الإجابة الصحيحة</label>
+                            <div class="tf-buttons">
+                                <button class="tf-btn @(_qCorrectBool == true ? "active-true" : "")"
+                                        @onclick="() => _qCorrectBool = true">✓ صح</button>
+                                <button class="tf-btn @(_qCorrectBool == false ? "active-false" : "")"
+                                        @onclick="() => _qCorrectBool = false">✗ خطأ</button>
+                            </div>
+                        </div>
+                    }
+
+                    <div class="fs-form-row">
+                        <div class="fs-form-group">
+                            <label class="fs-label">الدرجة</label>
+                            <input type="number" class="fs-input" @bind="_qMarks" min="0.5" step="0.5" />
+                        </div>
+                        <div class="fs-form-group">
+                            <label class="fs-label">المستوى</label>
+                            <select class="fs-select" @bind="_qDifficulty">
+                                <option value="Easy">سهل</option>
+                                <option value="Medium">متوسط</option>
+                                <option value="Hard">صعب</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="fs-form-group">
+                        <label class="fs-label">شرح الإجابة (اختياري)</label>
+                        <textarea class="fs-input" rows="2" @bind="_qExplanation"
+                                  placeholder="يُعرض للطالب بعد تسليم الاختبار"></textarea>
+                    </div>
+
+                    <div class="modal-actions">
+                        <button class="fs-btn fs-btn-outline" @onclick="() => _showAddQuestion = false" disabled="@_saving">إلغاء</button>
+                        <button class="fs-btn fs-btn-primary" @onclick="AddQuestion" disabled="@_saving">
+                            @if (_saving) { <span class="fs-spinner"></span><span>جارٍ الحفظ...</span> }
+                            else { <span>إضافة السؤال</span> }
+                        </button>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .edit-page { padding: var(--fs-s-8) 0; min-height: calc(100vh - 72px); }
+    .edit-head { display: flex; justify-content: space-between; align-items: start; margin-bottom: var(--fs-s-6); flex-wrap: wrap; gap: var(--fs-s-3); }
+    .edit-head h1 { font-size: 26px; margin: var(--fs-s-1) 0; }
+    .empty { padding: 80px; text-align: center; }
+    .empty h3 { margin: var(--fs-s-3) 0 var(--fs-s-2); }
+
+    .questions { display: flex; flex-direction: column; gap: var(--fs-s-3); }
+    .question-card { padding: var(--fs-s-4); }
+    .q-head { display: flex; align-items: start; gap: var(--fs-s-3); margin-bottom: var(--fs-s-3); }
+    .q-num {
+        width: 32px; height: 32px; border-radius: 50%;
+        background: var(--fs-primary); color: white;
+        display: flex; align-items: center; justify-content: center;
+        font-weight: 800; flex-shrink: 0;
+    }
+    .q-info { flex: 1; }
+    .q-info strong { display: block; font-size: 15px; margin-bottom: 2px; }
+    .q-info small { font-size: 12px; color: var(--fs-text-muted); }
+    .delete-btn { color: var(--fs-danger); }
+    .delete-btn:hover { background: #FEE; }
+
+    .options-preview { display: flex; flex-direction: column; gap: 6px; margin-top: var(--fs-s-2); padding-right: 44px; }
+    .option { padding: 6px 12px; font-size: 13px; color: var(--fs-text-muted); }
+    .option.correct { color: var(--fs-success); font-weight: 700; background: #F0FDF4; border-radius: var(--fs-r-sm); }
+    .explanation { margin-top: var(--fs-s-2); padding: var(--fs-s-2); background: var(--fs-accent-soft); border-radius: var(--fs-r-sm); font-size: 13px; color: #B56E00; }
+
+    .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; padding: var(--fs-s-4); z-index: 100; backdrop-filter: blur(4px); overflow-y: auto; }
+    .modal { max-width: 520px; width: 100%; }
+    .modal.big { max-width: 640px; max-height: 90vh; overflow-y: auto; }
+    .modal-actions { display: flex; gap: var(--fs-s-2); justify-content: flex-end; margin-top: var(--fs-s-4); }
+    .fs-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--fs-s-3); }
+
+    .type-chips { display: flex; gap: var(--fs-s-2); }
+    .type-chip { flex: 1; padding: var(--fs-s-3); background: var(--fs-surface); border: 2px solid var(--fs-border); border-radius: var(--fs-r-md); font-family: var(--fs-font-body); font-weight: 600; font-size: 14px; cursor: pointer; transition: all var(--fs-trans); }
+    .type-chip:hover { border-color: var(--fs-primary); }
+    .type-chip.active { border-color: var(--fs-primary); background: var(--fs-primary-soft); color: var(--fs-primary); }
+
+    .option-input { display: flex; align-items: center; gap: var(--fs-s-2); margin-bottom: var(--fs-s-2); }
+    .option-input input[type="radio"] { width: 20px; height: 20px; cursor: pointer; }
+    .option-input input.fs-input { flex: 1; }
+
+    .tf-buttons { display: flex; gap: var(--fs-s-2); }
+    .tf-btn { flex: 1; padding: var(--fs-s-4); background: var(--fs-surface); border: 2px solid var(--fs-border); border-radius: var(--fs-r-md); font-weight: 700; font-size: 16px; cursor: pointer; transition: all var(--fs-trans); }
+    .tf-btn.active-true { border-color: var(--fs-success); background: #D1FAE5; color: var(--fs-success); }
+    .tf-btn.active-false { border-color: var(--fs-danger); background: #FEE2E2; color: var(--fs-danger); }
+</style>
+
+@code {
+    [Parameter] public Guid AssessmentId { get; set; }
+
+    private FSEdu.Shared.Contracts.Assessments.AssessmentDetailDto? _data;
+    private bool _loaded;
+    private string? _message;
+    private bool _isError;
+
+    private bool _showAddQuestion;
+    private string _qType = "MultipleChoice";
+    private string _qText = "";
+    private string[] _qOptions = new string[4];
+    private int _qCorrectOpt = 0;
+    private bool? _qCorrectBool;
+    private decimal _qMarks = 2;
+    private string _qDifficulty = "Medium";
+    private string _qExplanation = "";
+    private bool _saving;
+    private string? _modalError;
+
+    private Guid? _deletingId;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            await Load();
+        }
+    }
+
+    private async Task Load()
+    {
+        try { _data = await Api.GetAssessmentDetailsAsync(AssessmentId); }
+        catch { _data = null; }
+        _loaded = true; StateHasChanged();
+    }
+
+    private async Task AddQuestion()
+    {
+        if (_saving) return;
+        _modalError = null;
+
+        if (string.IsNullOrWhiteSpace(_qText) || _qText.Length < 3)
+        { _modalError = "نص السؤال مطلوب (3 أحرف على الأقل)"; return; }
+
+        if (_qType == "MultipleChoice")
+        {
+            if (_qOptions.Count(o => !string.IsNullOrWhiteSpace(o)) < 2)
+            { _modalError = "أدخل خيارين على الأقل"; return; }
+        }
+        else if (_qCorrectBool is null)
+        { _modalError = "اختر الإجابة الصحيحة"; return; }
+
+        _saving = true;
+        try
+        {
+            var opts = _qType == "MultipleChoice"
+                ? _qOptions.Where(o => !string.IsNullOrWhiteSpace(o)).Select(o => o.Trim()).ToArray()
+                : null;
+
+            var req = new FSEdu.Shared.Contracts.Assessments.AddQuestionRequest(
+                _qType, _qDifficulty, _qText.Trim(),
+                opts, _qType == "MultipleChoice" ? _qCorrectOpt : null,
+                _qType == "TrueFalse" ? _qCorrectBool : null,
+                string.IsNullOrWhiteSpace(_qExplanation) ? null : _qExplanation.Trim(),
+                _qMarks);
+
+            var (id, err) = await Api.AddQuestionAsync(AssessmentId, req);
+            if (err is not null) { _modalError = err.Message; return; }
+
+            _showAddQuestion = false;
+            _qText = ""; _qOptions = new string[4]; _qCorrectOpt = 0;
+            _qCorrectBool = null; _qExplanation = "";
+            ShowSuccess("تمت إضافة السؤال!");
+            await Load();
+        }
+        finally { _saving = false; }
+    }
+
+    private async Task DeleteQuestion(Guid id)
+    {
+        if (_deletingId is not null) return;
+        _deletingId = id; StateHasChanged();
+        try
+        {
+            var err = await Api.RemoveQuestionAsync(AssessmentId, id);
+            if (err is null) { ShowSuccess("تم حذف السؤال"); await Load(); }
+            else { ShowError(err.Message); }
+        }
+        finally { _deletingId = null; }
+    }
+
+    private void ShowError(string m) { _message = m; _isError = true; StateHasChanged(); }
+    private void ShowSuccess(string m) { _message = m; _isError = false; StateHasChanged(); }
+
+    private static string TypeLabel(string s) => s switch
+    {
+        "Quiz" => "اختبار قصير", "Assignment" => "واجب", "Exam" => "امتحان", _ => s
+    };
+    private static string TypeLabel2(string s) => s switch
+    {
+        "MultipleChoice" => "اختيار من متعدد", "TrueFalse" => "صح/خطأ", _ => s
+    };
+    private static string DiffLabel(string s) => s switch
+    {
+        "Easy" => "سهل", "Medium" => "متوسط", "Hard" => "صعب", _ => s
+    };
+}

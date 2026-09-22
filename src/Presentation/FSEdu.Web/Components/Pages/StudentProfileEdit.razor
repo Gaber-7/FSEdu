@@ -1,0 +1,303 @@
+@page "/student/profile/edit"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject NavigationManager Nav
+@inject IConfiguration Config
+
+<PageTitle>ملفّي الشخصي</PageTitle>
+
+<div class="spe-page">
+    <div class="fs-container">
+        <header class="spe-head">
+            <h1>👤 ملفّي الشخصي</h1>
+        </header>
+
+        @if (!_loaded)
+        {
+            <div class="fs-center" style="padding:80px"><span class="fs-spinner"></span></div>
+        }
+        else if (_data is null)
+        {
+            <div class="fs-alert fs-alert-error">تعذّر التحميل</div>
+        }
+        else
+        {
+            <section class="fs-card spe-section spe-avatar-section">
+                <h3>الصورة الشخصية</h3>
+                <div class="spe-avatar-row">
+                    <div class="spe-avatar-preview">
+                        @if (!string.IsNullOrEmpty(_avatarUrl))
+                        {
+                            <img src="@AvatarFullUrl(_avatarUrl)" alt="الصورة الشخصية" />
+                        }
+                        else
+                        {
+                            <span>@(_data.FullName.FirstOrDefault())</span>
+                        }
+                    </div>
+                    <div class="spe-avatar-actions">
+                        <InputFile OnChange="OnAvatarSelected" accept="image/*" disabled="@_avatarBusy" />
+                        @if (_avatarBusy) { <small class="fs-text-muted">جارٍ الرفع...</small> }
+                        @if (!string.IsNullOrEmpty(_avatarUrl))
+                        {
+                            <button class="fs-btn fs-btn-outline fs-btn-sm" @onclick="RemoveAvatar" disabled="@_avatarBusy">إزالة الصورة</button>
+                        }
+                        @if (!string.IsNullOrEmpty(_avatarError))
+                        {
+                            <div class="fs-alert fs-alert-error">@_avatarError</div>
+                        }
+                        <small class="fs-text-subtle">JPG/PNG/WEBP/GIF — حد أقصى 3 ميجابايت</small>
+                    </div>
+                </div>
+            </section>
+
+            <section class="fs-card spe-section">
+                <h3>الحساب</h3>
+
+                <label class="spe-label">الاسم الكامل</label>
+                <input type="text" class="spe-input" maxlength="200"
+                       @bind="_fullName" @bind:event="oninput" />
+
+                <label class="spe-label">البريد الإلكتروني (اختياري)</label>
+                <input type="email" class="spe-input" maxlength="200"
+                       placeholder="example@email.com"
+                       @bind="_email" @bind:event="oninput" />
+                @if (_data.EmailVerified && !string.IsNullOrEmpty(_email) && _email == _data.Email)
+                {
+                    <small class="fs-text-success">✓ مُفعّل</small>
+                }
+                else if (!string.IsNullOrEmpty(_email))
+                {
+                    <small class="fs-text-subtle">سيُطلب منك تأكيد البريد بعد تغييره.</small>
+                }
+
+                <label class="spe-label">رقم الجوّال (لتسجيل الدخول)</label>
+                <input type="tel" class="spe-input" maxlength="20" style="direction:ltr"
+                       placeholder="+201xxxxxxxxx"
+                       @bind="_phone" @bind:event="oninput" />
+                <small class="fs-text-subtle">
+                    ⚠️ تغيير رقم الجوّال سيُستخدم لتسجيل الدخول لاحقًا — سيُطلب منك التحقّق عبر OTP عند التغيير.
+                </small>
+
+                <label class="spe-label">رقم الواتساب (اختياري)</label>
+                <input type="tel" class="spe-input" maxlength="20" style="direction:ltr"
+                       placeholder="+201xxxxxxxxx — اتركه فارغًا لو هو نفس رقم الجوّال"
+                       @bind="_whatsApp" @bind:event="oninput" />
+                <small class="fs-text-subtle">
+                    يُستخدم للتواصل بدلًا من رقم الجوّال المُسجَّل.
+                </small>
+
+                @if (!string.IsNullOrEmpty(_error))
+                {
+                    <div class="fs-alert fs-alert-error">@_error</div>
+                }
+                @if (!string.IsNullOrEmpty(_success))
+                {
+                    <div class="fs-alert fs-alert-success">@_success</div>
+                }
+
+                <div class="spe-actions">
+                    <button class="fs-btn fs-btn-primary" @onclick="Save" disabled="@_saving">
+                        @(_saving ? "جارٍ الحفظ..." : "حفظ التعديلات")
+                    </button>
+                </div>
+            </section>
+
+            <section class="fs-card spe-section">
+                <h3>معلومات أكاديمية</h3>
+                <div class="spe-meta">
+                    <div class="spe-meta-row">
+                        <span>📚 المرحلة الدراسية</span>
+                        <strong>@_data.StageName</strong>
+                    </div>
+                    <div class="spe-meta-row">
+                        <span>🌍 المنطقة</span>
+                        <strong>@_data.RegionName</strong>
+                    </div>
+                    @if (!string.IsNullOrEmpty(_data.SchoolName))
+                    {
+                        <div class="spe-meta-row">
+                            <span>🏫 المدرسة</span>
+                            <strong>@_data.SchoolName</strong>
+                        </div>
+                    }
+                </div>
+                <small class="fs-text-subtle">لتغيير المرحلة أو المنطقة يُرجى التواصل مع الدعم.</small>
+            </section>
+
+            <section class="fs-card spe-section spe-stats">
+                <h3>إنجازاتي</h3>
+                <div class="spe-stats-grid">
+                    <div class="spe-stat">
+                        <strong>@_data.XpPoints</strong>
+                        <span>XP</span>
+                    </div>
+                    <div class="spe-stat">
+                        <strong>@_data.CurrentStreakDays</strong>
+                        <span>سلسلة حالية (أيام)</span>
+                    </div>
+                    <div class="spe-stat">
+                        <strong>@_data.LongestStreakDays</strong>
+                        <span>أطول سلسلة</span>
+                    </div>
+                </div>
+            </section>
+        }
+    </div>
+</div>
+
+<style>
+    .spe-page { padding: var(--fs-s-8) 0; min-height: calc(100vh - 72px); }
+    .spe-head { margin-bottom: var(--fs-s-5); }
+    .spe-head h1 { margin: 0; font-size: 24px; }
+
+    .spe-avatar-section .spe-avatar-row { display: flex; gap: var(--fs-s-4); align-items: center; flex-wrap: wrap; }
+    .spe-avatar-preview {
+        width: 100px; height: 100px; border-radius: 50%;
+        background: linear-gradient(135deg, var(--fs-primary), var(--fs-secondary));
+        color: white; font-weight: 800; font-size: 40px;
+        display: flex; align-items: center; justify-content: center;
+        overflow: hidden; flex-shrink: 0;
+    }
+    .spe-avatar-preview img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .spe-avatar-actions { display: flex; flex-direction: column; gap: var(--fs-s-2); flex: 1; min-width: 200px; }
+
+    .spe-section { padding: var(--fs-s-5); margin-bottom: var(--fs-s-4); }
+    .spe-section h3 { margin: 0 0 var(--fs-s-3); font-size: 17px; }
+
+    .spe-label { display: block; font-size: 13px; font-weight: 600; margin: var(--fs-s-3) 0 var(--fs-s-1); }
+    .spe-input {
+        width: 100%; padding: var(--fs-s-2) var(--fs-s-3);
+        border: 1px solid var(--fs-border); border-radius: var(--fs-r-md);
+        font-family: inherit; font-size: 14px; line-height: 1.7;
+    }
+    .spe-input:focus { outline: none; border-color: var(--fs-primary); }
+    .spe-input:disabled { background: var(--fs-bg); color: var(--fs-text-muted); }
+
+    .spe-actions { margin-top: var(--fs-s-4); display: flex; gap: var(--fs-s-2); }
+
+    .spe-meta { display: flex; flex-direction: column; gap: var(--fs-s-2); }
+    .spe-meta-row { display: flex; justify-content: space-between; padding: var(--fs-s-2) var(--fs-s-3); background: var(--fs-bg); border-radius: var(--fs-r-md); font-size: 14px; }
+    .spe-meta-row strong { color: var(--fs-primary); }
+
+    .spe-stats { padding: var(--fs-s-5); }
+    .spe-stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: var(--fs-s-3); }
+    .spe-stat { background: var(--fs-bg); padding: var(--fs-s-3); border-radius: var(--fs-r-md); text-align: center; }
+    .spe-stat strong { display: block; font-size: 22px; font-weight: 800; color: var(--fs-primary); }
+    .spe-stat span { font-size: 12px; color: var(--fs-text-muted); }
+</style>
+
+@code {
+    private FSEdu.Shared.Contracts.Auth.StudentProfileDto? _data;
+    private bool _loaded;
+
+    private string _fullName = "";
+    private string? _email;
+    private string? _phone;
+    private string? _whatsApp;
+    private bool _saving;
+    private string? _error;
+    private string? _success;
+
+    private string? _avatarUrl;
+    private bool _avatarBusy;
+    private string? _avatarError;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            if (Auth.CurrentUser is null || !Auth.IsInRole("Student"))
+            {
+                Nav.NavigateTo("/login");
+                return;
+            }
+            await Load();
+        }
+    }
+
+    private async Task Load()
+    {
+        _data = await Api.GetMyStudentProfileAsync();
+        if (_data is not null)
+        {
+            _fullName = _data.FullName;
+            _email = _data.Email;
+            _phone = _data.Phone;
+            _whatsApp = _data.WhatsAppNumber;
+            _avatarUrl = _data.AvatarUrl;
+        }
+        _loaded = true;
+        StateHasChanged();
+    }
+
+    private async Task OnAvatarSelected(InputFileChangeEventArgs e)
+    {
+        _avatarError = null;
+        var file = e.File;
+        if (file is null) return;
+        if (file.Size > 3 * 1024 * 1024) { _avatarError = "الحد الأقصى 3 ميجابايت"; return; }
+
+        _avatarBusy = true; StateHasChanged();
+        try
+        {
+            await using var stream = file.OpenReadStream(maxAllowedSize: 3 * 1024 * 1024);
+            var (url, err) = await Api.UploadAvatarAsync(stream, file.Name, file.ContentType);
+            if (err is not null) { _avatarError = err.Message ?? "تعذّر رفع الصورة"; return; }
+            if (string.IsNullOrEmpty(url)) { _avatarError = "تعذّر رفع الصورة"; return; }
+
+            var ok = await Api.SetMyAvatarAsync(url);
+            if (!ok) { _avatarError = "تعذّر حفظ الصورة"; return; }
+
+            _avatarUrl = url;
+            await Auth.UpdateAvatarLocallyAsync(url);
+        }
+        catch (Exception ex) { _avatarError = "خطأ: " + ex.Message; }
+        finally { _avatarBusy = false; StateHasChanged(); }
+    }
+
+    private async Task RemoveAvatar()
+    {
+        _avatarBusy = true; _avatarError = null; StateHasChanged();
+        try
+        {
+            var ok = await Api.RemoveMyAvatarAsync();
+            if (!ok) { _avatarError = "تعذّر الإزالة"; return; }
+            _avatarUrl = null;
+            await Auth.UpdateAvatarLocallyAsync(null);
+        }
+        finally { _avatarBusy = false; StateHasChanged(); }
+    }
+
+    private string AvatarFullUrl(string? path)
+    {
+        if (string.IsNullOrEmpty(path)) return "";
+        if (path.StartsWith("http", StringComparison.OrdinalIgnoreCase)) return path;
+        var apiBase = (Config["ApiBaseUrl"] ?? "").TrimEnd('/');
+        return apiBase + path;
+    }
+
+    private async Task Save()
+    {
+        _error = null; _success = null;
+        if (string.IsNullOrWhiteSpace(_fullName) || _fullName.Trim().Length < 3)
+        { _error = "الاسم قصير جدًا"; return; }
+
+        _saving = true; StateHasChanged();
+        try
+        {
+            var (ok, err) = await Api.UpdateStudentProfileAsync(
+                _fullName.Trim(),
+                string.IsNullOrWhiteSpace(_email) ? null : _email!.Trim(),
+                string.IsNullOrWhiteSpace(_phone) ? null : _phone!.Trim(),
+                string.IsNullOrWhiteSpace(_whatsApp) ? null : _whatsApp!.Trim());
+
+            if (!ok) { _error = err?.Message ?? "تعذّر الحفظ"; return; }
+            _success = "تم الحفظ ✓";
+            await Load();
+        }
+        finally { _saving = false; StateHasChanged(); }
+    }
+}

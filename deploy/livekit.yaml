@@ -1,0 +1,53 @@
+# ═══════════════════════════════════════════════════════
+# LiveKit Server Configuration
+# ═══════════════════════════════════════════════════════
+
+port: 7880
+
+# Bind to localhost only — Caddy proxies external traffic
+bind_addresses:
+  - "127.0.0.1"
+
+# RTC ports (UDP) — must be exposed on host firewall
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 60000
+  use_external_ip: true
+
+# Auth keys (must match .env)
+keys:
+  ${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}
+
+# Logging
+logging:
+  level: info
+  json: false
+
+# Room configuration defaults
+room:
+  enabled_codecs:
+    - mime: audio/opus
+    - mime: video/h264
+    - mime: video/vp8
+  empty_timeout: 300        # 5 min auto-close empty rooms
+  max_participants: 200     # per room
+
+# TURN server (use coturn on same host)
+turn:
+  enabled: true
+  domain: ${DOMAIN}
+  tls_port: 5349
+  udp_port: 3478
+
+# Recording / Egress (writes to /recordings volume)
+egress:
+  insecure: false
+
+# Webhook for recording lifecycle events → notify our API.
+# LiveKit runs in host network mode; the API binds 127.0.0.1:8080 on the host
+# (see ports mapping in docker-compose.yml), so we call it via host loopback.
+webhook:
+  api_key: ${LIVEKIT_API_KEY}
+  urls:
+    - "http://localhost:8080/api/v1/webhooks/livekit"

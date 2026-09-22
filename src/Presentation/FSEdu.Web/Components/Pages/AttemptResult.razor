@@ -1,0 +1,187 @@
+@page "/attempts/{AttemptId:guid}/result"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+
+<PageTitle>نتيجة الاختبار</PageTitle>
+
+<div class="result-page">
+    <div class="fs-container">
+        @if (!_loaded)
+        {
+            <div class="fs-center" style="padding:80px"><span class="fs-spinner"></span></div>
+        }
+        else if (_result is null)
+        {
+            <div class="fs-alert fs-alert-error">لم يتم العثور على النتيجة</div>
+        }
+        else
+        {
+            <div class="result-hero @(_result.Passed ? "passed" : "failed")">
+                <div class="result-icon">@(_result.Passed ? "🎉" : "😔")</div>
+                <h1>@(_result.Passed ? "مبروك! لقد نجحت" : "لم تنجح هذه المرة")</h1>
+                <p>@_result.AssessmentTitle</p>
+
+                <div class="score-circle">
+                    <div class="score-percent">@_result.Percentage%</div>
+                    <div class="score-marks">@_result.Score / @_result.TotalMarks</div>
+                </div>
+
+                <div class="result-stats">
+                    <div class="stat">
+                        <strong>@_result.Questions.Count(q => q.IsCorrect)</strong>
+                        <span>إجابة صحيحة</span>
+                    </div>
+                    <div class="stat">
+                        <strong>@_result.Questions.Count(q => !q.IsCorrect)</strong>
+                        <span>إجابة خاطئة</span>
+                    </div>
+                    <div class="stat">
+                        <strong>@_result.Questions.Length</strong>
+                        <span>إجمالي الأسئلة</span>
+                    </div>
+                </div>
+            </div>
+
+            <h2 style="margin-top:var(--fs-s-10);margin-bottom:var(--fs-s-4)">📋 مراجعة الإجابات</h2>
+
+            <div class="questions">
+                @foreach (var q in _result.Questions.Select((x, i) => new { Q = x, I = i + 1 }))
+                {
+                    <div class="question-card fs-card @(q.Q.IsCorrect ? "correct-card" : "wrong-card")">
+                        <div class="q-head">
+                            <span class="q-num @(q.Q.IsCorrect ? "ok" : "bad")">
+                                @(q.Q.IsCorrect ? "✓" : "✗")
+                            </span>
+                            <div class="q-info">
+                                <strong>السؤال @q.I: @q.Q.QuestionText</strong>
+                                <small>
+                                    @q.Q.MarksEarned / @q.Q.MaxMarks درجة
+                                </small>
+                            </div>
+                        </div>
+
+                        @if (q.Q.Type == "MultipleChoice" && q.Q.Options is not null)
+                        {
+                            <div class="options-review">
+                                @for (var i = 0; i < q.Q.Options.Length; i++)
+                                {
+                                    var idx = i;
+                                    var isUser = q.Q.UserSelectedOption == idx;
+                                    var isCorrect = q.Q.CorrectOption == idx;
+                                    var cls = isCorrect ? "correct" : (isUser ? "wrong" : "");
+                                    <div class="option @cls">
+                                        @if (isCorrect) { <span>✓</span> }
+                                        else if (isUser) { <span>✗</span> }
+                                        else { <span>○</span> }
+                                        <span>@q.Q.Options[idx]</span>
+                                        @if (isUser) { <small>(إجابتك)</small> }
+                                        @if (isCorrect) { <small>(الصحيحة)</small> }
+                                    </div>
+                                }
+                            </div>
+                        }
+                        else if (q.Q.Type == "TrueFalse")
+                        {
+                            <div class="options-review">
+                                <div class="option @(q.Q.CorrectBoolean == true ? "correct" : (q.Q.UserSelectedBoolean == true ? "wrong" : ""))">
+                                    <span>@(q.Q.CorrectBoolean == true ? "✓" : (q.Q.UserSelectedBoolean == true ? "✗" : "○"))</span>
+                                    <span>صح</span>
+                                    @if (q.Q.UserSelectedBoolean == true) { <small>(إجابتك)</small> }
+                                    @if (q.Q.CorrectBoolean == true) { <small>(الصحيحة)</small> }
+                                </div>
+                                <div class="option @(q.Q.CorrectBoolean == false ? "correct" : (q.Q.UserSelectedBoolean == false ? "wrong" : ""))">
+                                    <span>@(q.Q.CorrectBoolean == false ? "✓" : (q.Q.UserSelectedBoolean == false ? "✗" : "○"))</span>
+                                    <span>خطأ</span>
+                                    @if (q.Q.UserSelectedBoolean == false) { <small>(إجابتك)</small> }
+                                    @if (q.Q.CorrectBoolean == false) { <small>(الصحيحة)</small> }
+                                </div>
+                            </div>
+                        }
+
+                        @if (!string.IsNullOrEmpty(q.Q.Explanation))
+                        {
+                            <div class="explanation">
+                                <strong>💡 الشرح:</strong> @q.Q.Explanation
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+
+            <div class="actions">
+                <a href="/dashboard/student" class="fs-btn fs-btn-outline">← لوحتي</a>
+                <a href="/courses" class="fs-btn fs-btn-primary">استعرض المزيد من الدورات</a>
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .result-page { padding: var(--fs-s-8) 0; min-height: calc(100vh - 72px); }
+
+    .result-hero {
+        text-align: center; padding: var(--fs-s-12) var(--fs-s-6);
+        border-radius: var(--fs-r-xl);
+        color: white; position: relative; overflow: hidden;
+    }
+    .result-hero.passed { background: linear-gradient(135deg, var(--fs-success), #059669); }
+    .result-hero.failed { background: linear-gradient(135deg, #DC2626, var(--fs-danger)); }
+    .result-icon { font-size: 72px; margin-bottom: var(--fs-s-3); }
+    .result-hero h1 { color: white; font-size: 32px; margin: 0 0 var(--fs-s-2); }
+    .result-hero p { color: rgba(255,255,255,0.9); margin: 0 0 var(--fs-s-6); font-size: 18px; }
+
+    .score-circle {
+        display: inline-block;
+        padding: var(--fs-s-6) var(--fs-s-8);
+        background: rgba(255,255,255,0.15);
+        border-radius: var(--fs-r-xl);
+        margin-bottom: var(--fs-s-6);
+        backdrop-filter: blur(4px);
+    }
+    .score-percent { font-size: 56px; font-weight: 900; line-height: 1; }
+    .score-marks { font-size: 18px; opacity: 0.85; margin-top: var(--fs-s-2); }
+
+    .result-stats { display: flex; justify-content: center; gap: var(--fs-s-8); flex-wrap: wrap; }
+    .stat { text-align: center; }
+    .stat strong { display: block; font-size: 32px; font-weight: 800; }
+    .stat span { font-size: 14px; opacity: 0.85; }
+
+    .questions { display: flex; flex-direction: column; gap: var(--fs-s-4); margin-bottom: var(--fs-s-8); }
+    .question-card.correct-card { border-right: 4px solid var(--fs-success); }
+    .question-card.wrong-card { border-right: 4px solid var(--fs-danger); }
+
+    .q-head { display: flex; align-items: start; gap: var(--fs-s-3); margin-bottom: var(--fs-s-3); }
+    .q-num { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 18px; flex-shrink: 0; }
+    .q-num.ok { background: var(--fs-success); color: white; }
+    .q-num.bad { background: var(--fs-danger); color: white; }
+    .q-info strong { display: block; font-size: 15px; line-height: 1.5; margin-bottom: 4px; }
+    .q-info small { color: var(--fs-text-muted); font-size: 13px; }
+
+    .options-review { display: flex; flex-direction: column; gap: var(--fs-s-2); padding-right: 44px; }
+    .option { display: flex; align-items: center; gap: var(--fs-s-2); padding: var(--fs-s-2) var(--fs-s-3); border-radius: var(--fs-r-sm); font-size: 14px; }
+    .option.correct { background: #D1FAE5; color: var(--fs-success); font-weight: 600; }
+    .option.wrong { background: #FEE2E2; color: var(--fs-danger); font-weight: 600; text-decoration: line-through; }
+    .option small { color: var(--fs-text-muted); font-size: 11px; font-weight: 500; margin-right: auto; }
+
+    .explanation { margin-top: var(--fs-s-3); padding: var(--fs-s-3); background: var(--fs-accent-soft); border-radius: var(--fs-r-sm); font-size: 14px; color: #B56E00; }
+
+    .actions { display: flex; gap: var(--fs-s-3); justify-content: center; padding: var(--fs-s-6) 0; flex-wrap: wrap; }
+</style>
+
+@code {
+    [Parameter] public Guid AttemptId { get; set; }
+
+    private FSEdu.Shared.Contracts.Assessments.AttemptResultDto? _result;
+    private bool _loaded;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            try { _result = await Api.GetAttemptResultAsync(AttemptId); } catch { }
+            _loaded = true; StateHasChanged();
+        }
+    }
+}

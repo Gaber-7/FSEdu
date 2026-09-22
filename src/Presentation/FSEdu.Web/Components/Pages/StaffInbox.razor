@@ -1,0 +1,137 @@
+@page "/staff/tickets"
+@page "/teacher/tickets"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+
+<PageTitle>صندوق الأسئلة — اسأل مدرس</PageTitle>
+
+<div class="inbox-page">
+    <div class="fs-container">
+        <div class="page-head">
+            <div>
+                <h1>📨 صندوق أسئلة الطلاب</h1>
+                <p class="fs-text-muted">الأسئلة المخصصة لك أو الأسئلة في موادك</p>
+            </div>
+            <button class="fs-btn fs-btn-outline" @onclick="Load">🔄 تحديث</button>
+        </div>
+
+        @if (!_loaded)
+        {
+            <div class="fs-center" style="padding:60px"><span class="fs-spinner"></span></div>
+        }
+        else if (!Auth.IsAuthenticated || (!Auth.IsInRole("Teacher") && !Auth.IsInRole("Assistant") && !Auth.IsInRole("Admin")))
+        {
+            <div class="fs-alert fs-alert-error">للموظفين فقط (مدرس / مساعد / مدير).</div>
+        }
+        else if (_tickets is null || !_tickets.Any())
+        {
+            <div class="fs-card fs-center empty">
+                <div style="font-size:64px">📭</div>
+                <h3>لا توجد أسئلة حاليًا</h3>
+                <p class="fs-text-muted">سيظهر هنا أي سؤال يطرحه طالب في موادك</p>
+            </div>
+        }
+        else
+        {
+            var open = _tickets.Where(t => t.Status == "Open").ToList();
+            var answered = _tickets.Where(t => t.Status == "Answered").ToList();
+            var resolved = _tickets.Where(t => t.Status == "Resolved").ToList();
+
+            <div class="stat-row">
+                <div class="stat-card stat-open"><strong>@open.Count</strong><span>جديدة (تحتاج رد)</span></div>
+                <div class="stat-card stat-answered"><strong>@answered.Count</strong><span>تم الرد عليها</span></div>
+                <div class="stat-card stat-resolved"><strong>@resolved.Count</strong><span>محلولة</span></div>
+            </div>
+
+            <div class="tickets-list">
+                @foreach (var t in _tickets)
+                {
+                    <a href="/tickets/@t.Id" class="ticket-row fs-card">
+                        <span class="status-icon @GetStatusClass(t.Status)">@StatusIcon(t.Status)</span>
+                        <div class="ticket-info">
+                            <strong>@t.Title</strong>
+                            <small>
+                                @t.SubjectName · من @t.StudentName
+                                @if (t.Priority == "High") { <span class="urgent-badge">🔴 عاجل</span> }
+                                @if (string.IsNullOrEmpty(t.AssigneeName)) { <span class="unassigned-badge">👤 غير مُسند</span> }
+                            </small>
+                        </div>
+                        <div class="ticket-meta">
+                            <small>@t.MessagesCount رسالة</small>
+                            <small>@t.CreatedAtUtc.ToString("yyyy/MM/dd HH:mm")</small>
+                        </div>
+                    </a>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .inbox-page { padding: var(--fs-s-10) 0; min-height: calc(100vh - 72px); }
+    .page-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--fs-s-6); flex-wrap: wrap; gap: var(--fs-s-3); }
+    .empty { padding: 80px; text-align: center; }
+    .empty h3 { margin: var(--fs-s-3) 0 var(--fs-s-2); }
+
+    .stat-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--fs-s-4); margin-bottom: var(--fs-s-6); }
+    @@media (max-width: 700px) { .stat-row { grid-template-columns: 1fr; } }
+    .stat-card { padding: var(--fs-s-5); border-radius: var(--fs-r-lg); text-align: center; }
+    .stat-card strong { display: block; font-size: 32px; font-weight: 800; line-height: 1; margin-bottom: 4px; }
+    .stat-card span { font-size: 13px; color: var(--fs-text-muted); }
+    .stat-open { background: var(--fs-primary-soft); }
+    .stat-open strong { color: var(--fs-primary); }
+    .stat-answered { background: #D1FAE5; }
+    .stat-answered strong { color: var(--fs-success); }
+    .stat-resolved { background: var(--fs-secondary-soft); }
+    .stat-resolved strong { color: var(--fs-secondary); }
+
+    .tickets-list { display: flex; flex-direction: column; gap: var(--fs-s-3); }
+    .ticket-row { display: flex; align-items: center; gap: var(--fs-s-4); padding: var(--fs-s-4); color: inherit; text-decoration: none; transition: all var(--fs-trans); }
+    .ticket-row:hover { transform: translateX(-4px); border-color: var(--fs-primary); }
+    .status-icon { width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 22px; flex-shrink: 0; }
+    .status-open { background: var(--fs-primary-soft); color: var(--fs-primary); }
+    .status-answered { background: #D1FAE5; color: var(--fs-success); }
+    .status-resolved { background: var(--fs-secondary-soft); color: var(--fs-secondary); }
+    .status-closed { background: var(--fs-border); color: var(--fs-text-muted); }
+    .ticket-info { flex: 1; }
+    .ticket-info strong { display: block; font-size: 15px; line-height: 1.4; margin-bottom: 4px; }
+    .ticket-info small { font-size: 12px; color: var(--fs-text-muted); }
+    .urgent-badge { color: var(--fs-danger); font-weight: 700; margin-right: var(--fs-s-2); }
+    .unassigned-badge { color: var(--fs-warning); font-weight: 600; margin-right: var(--fs-s-2); }
+    .ticket-meta { text-align: left; }
+    .ticket-meta small { display: block; font-size: 12px; color: var(--fs-text-muted); }
+</style>
+
+@code {
+    private List<FSEdu.Shared.Contracts.Tickets.TicketListItemDto>? _tickets;
+    private bool _loaded;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            await Load();
+        }
+    }
+
+    private async Task Load()
+    {
+        if (!Auth.IsAuthenticated) { _loaded = true; StateHasChanged(); return; }
+        try { _tickets = await Api.GetStaffInboxAsync(); }
+        catch { _tickets = new(); }
+        _loaded = true; StateHasChanged();
+    }
+
+    private static string StatusIcon(string s) => s switch
+    {
+        "Open" => "❓", "Answered" => "💬", "Resolved" => "✅", _ => "📩"
+    };
+
+    private static string GetStatusClass(string s) => s switch
+    {
+        "Open" => "status-open", "Answered" => "status-answered",
+        "Resolved" => "status-resolved", _ => "status-closed"
+    };
+}

@@ -1,0 +1,145 @@
+@page "/student/live"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+
+<PageTitle>الحصص المباشرة — الطالب</PageTitle>
+
+<div class="page">
+    <div class="fs-container">
+        <div class="page-head">
+            <div>
+                <h1>🎥 الحصص المباشرة</h1>
+                <p class="fs-text-muted">حصص قادمة وحالية في موادك المشترك بها</p>
+            </div>
+            <button class="fs-btn fs-btn-outline" @onclick="Load">🔄 تحديث</button>
+        </div>
+
+        @if (!_loaded)
+        {
+            <div class="fs-center" style="padding:60px"><span class="fs-spinner"></span></div>
+        }
+        else if (!Auth.IsAuthenticated)
+        {
+            <div class="fs-alert fs-alert-error">يجب تسجيل الدخول. <a href="/login">دخول</a></div>
+        }
+        else if (_sessions is null || !_sessions.Any())
+        {
+            <div class="fs-card fs-center empty">
+                <div style="font-size:64px">📅</div>
+                <h3>لا توجد حصص مباشرة قادمة</h3>
+                <p class="fs-text-muted">سيظهر هنا أي حصة يجدولها مدرسوك</p>
+            </div>
+        }
+        else
+        {
+            <div class="sessions">
+                @foreach (var s in _sessions)
+                {
+                    var canJoin = s.Status == "Live" || (s.Status == "Scheduled" && s.ScheduledAtUtc <= DateTime.UtcNow.AddMinutes(15));
+                    <div class="session-card fs-card @s.Status.ToLower()">
+                        <div class="status-bar">
+                            @if (s.Status == "Live") { <span class="dot"></span> }
+                            @StatusLabel(s.Status)
+                        </div>
+                        <div class="card-body">
+                            <h3>@s.Title</h3>
+                            <p class="fs-text-muted">@s.SubjectName · أ/ @s.TeacherName</p>
+                            @if (!string.IsNullOrEmpty(s.Description))
+                            {
+                                <p class="desc">@s.Description</p>
+                            }
+                            <div class="meta">
+                                <span>📅 @s.ScheduledAtUtc.ToLocalTime().ToString("yyyy/MM/dd HH:mm")</span>
+                                <span>⏱ @s.DurationMinutes دقيقة</span>
+                                @if (s.Status == "Live")
+                                {
+                                    <span class="live-text">@s.CurrentParticipants حاضر</span>
+                                }
+                            </div>
+                        </div>
+                        <div class="actions">
+                            @if (canJoin)
+                            {
+                                <a href="/live/@s.Id" class="fs-btn fs-btn-primary fs-btn-block">
+                                    @(s.Status == "Live" ? "↗ انضم الآن" : "⏰ ادخل (يبدأ قريبًا)")
+                                </a>
+                            }
+                            else
+                            {
+                                <div class="countdown">
+                                    سيبدأ خلال
+                                    <strong>@FormatCountdown(s.ScheduledAtUtc)</strong>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .page { padding: var(--fs-s-10) 0; min-height: calc(100vh - 72px); }
+    .page-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--fs-s-6); flex-wrap: wrap; gap: var(--fs-s-3); }
+    .empty { padding: 80px; text-align: center; }
+    .empty h3 { margin: var(--fs-s-3) 0 var(--fs-s-2); }
+
+    .sessions { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: var(--fs-s-4); }
+    .session-card { padding: 0; overflow: hidden; }
+    .session-card.live { border-color: var(--fs-danger); }
+    .status-bar { padding: 8px var(--fs-s-4); font-size: 13px; font-weight: 700; display: flex; align-items: center; gap: var(--fs-s-2); }
+    .session-card.live .status-bar { background: var(--fs-danger); color: white; }
+    .session-card.scheduled .status-bar { background: var(--fs-primary-soft); color: var(--fs-primary); }
+    .session-card.ended .status-bar { background: var(--fs-border); color: var(--fs-text-muted); }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: white; animation: pulse 1.5s infinite; }
+    @@keyframes pulse { 50% { opacity: 0.4; } }
+
+    .card-body { padding: var(--fs-s-4); }
+    .card-body h3 { margin: 0 0 4px; font-size: 17px; }
+    .card-body p { margin: 0 0 var(--fs-s-3); font-size: 13px; }
+    .desc { font-size: 13px; line-height: 1.6; margin: var(--fs-s-2) 0; }
+    .meta { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--fs-text-muted); }
+    .live-text { color: var(--fs-danger); font-weight: 700; }
+
+    .actions { padding: 0 var(--fs-s-4) var(--fs-s-4); }
+    .countdown { text-align: center; padding: var(--fs-s-3); background: var(--fs-bg); border-radius: var(--fs-r-md); font-size: 13px; color: var(--fs-text-muted); }
+    .countdown strong { color: var(--fs-primary); font-size: 16px; display: block; margin-top: 4px; }
+</style>
+
+@code {
+    private List<FSEdu.Shared.Contracts.LiveClassroom.LiveSessionListItemDto>? _sessions;
+    private bool _loaded;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            await Load();
+        }
+    }
+
+    private async Task Load()
+    {
+        if (!Auth.IsAuthenticated) { _loaded = true; StateHasChanged(); return; }
+        try { _sessions = await Api.GetUpcomingLiveSessionsAsync(); }
+        catch { _sessions = new(); }
+        _loaded = true; StateHasChanged();
+    }
+
+    private static string StatusLabel(string s) => s switch
+    {
+        "Scheduled" => "مجدولة", "Live" => "مباشرة الآن", "Ended" => "انتهت", _ => s
+    };
+
+    private static string FormatCountdown(DateTime utc)
+    {
+        var diff = utc - DateTime.UtcNow;
+        if (diff.TotalSeconds < 0) return "بدأت";
+        if (diff.TotalDays >= 1) return $"{(int)diff.TotalDays} يوم";
+        if (diff.TotalHours >= 1) return $"{(int)diff.TotalHours} ساعة";
+        return $"{(int)diff.TotalMinutes} دقيقة";
+    }
+}

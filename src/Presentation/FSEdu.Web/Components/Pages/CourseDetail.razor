@@ -1,0 +1,399 @@
+@page "/courses/{CourseId:guid}"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+
+<PageTitle>@(_course?.Title ?? "دورة")</PageTitle>
+
+<div class="course-page">
+    @if (!_loaded)
+    {
+        <div class="fs-center" style="padding:80px"><span class="fs-spinner"></span></div>
+    }
+    else if (_course is null)
+    {
+        <div class="fs-container"><div class="fs-alert fs-alert-error">الدورة غير موجودة</div></div>
+    }
+    else
+    {
+        <section class="course-hero">
+            <div class="fs-container hero-inner">
+                <div class="hero-text">
+                    <div class="hero-top-row">
+                        <span class="subject-chip" style="background: @(_course.SubjectColor ?? "#5B4FE5"); color: white;">
+                            @_course.SubjectName
+                        </span>
+                        @if (Auth.IsInRole("Student"))
+                        {
+                            <button class="bookmark-btn @(_isBookmarked ? "active" : "")"
+                                    title="@(_isBookmarked ? "إزالة من المحفوظات" : "حفظ في محفوظاتي")"
+                                    @onclick="ToggleBookmark"
+                                    disabled="@_bookmarkBusy">
+                                @(_isBookmarked ? "🔖 محفوظ" : "🔖 احفظ للرجوع")
+                            </button>
+                        }
+                    </div>
+                    <h1>@_course.Title</h1>
+                    <p class="fs-text-muted">
+                        @_course.StageName · أ/
+                        <a href="/teachers/@_course.TeacherId" class="teacher-link">@_course.TeacherName</a>
+                    </p>
+                    @if (!string.IsNullOrEmpty(_course.Description))
+                    {
+                        <p class="description">@_course.Description</p>
+                    }
+                    <div class="hero-stats">
+                        <div class="stat"><strong>@TotalLessons</strong><span>درس</span></div>
+                        <div class="stat"><strong>@_course.Chapters.Length</strong><span>فصل</span></div>
+                        @if (_course.EnrollmentCount > 0)
+                        {
+                            <div class="stat"><strong>@_course.EnrollmentCount</strong><span>طالب</span></div>
+                        }
+                    </div>
+                </div>
+                <div class="hero-visual">
+                    @if (!string.IsNullOrEmpty(_course.ThumbnailUrl))
+                    {
+                        <img src="@_course.ThumbnailUrl" alt="@_course.Title" />
+                    }
+                    else
+                    {
+                        <div class="placeholder">📚</div>
+                    }
+                    @if (!string.IsNullOrEmpty(_course.PreviewVideoUrl))
+                    {
+                        <button class="preview-btn" @onclick="() => _showPreview = true" title="معاينة الدورة">
+                            <span class="preview-play">▶</span>
+                            <span>معاينة الدورة</span>
+                        </button>
+                    }
+                    @if (!_course.HasAccess)
+                    {
+                        <div class="access-cta">
+                            <div class="lock-icon">🔒</div>
+                            <p>اشترك للوصول لكامل المحتوى</p>
+                            <a href="/pricing" class="fs-btn fs-btn-primary">اشترك الآن</a>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="access-cta access-granted">
+                            <div class="lock-icon">✓</div>
+                            <p>لديك صلاحية الوصول لهذه الدورة</p>
+                        </div>
+                    }
+                </div>
+            </div>
+        </section>
+
+        <section class="course-content">
+            <div class="fs-container">
+                <h2>📣 الإعلانات</h2>
+                <CourseAnnouncementsBlock CourseId="@CourseId" />
+
+                <h2 style="margin-top:var(--fs-s-8)">محتوى الدورة</h2>
+                <div class="chapters">
+                    @foreach (var ch in _course.Chapters)
+                    {
+                        <div class="chapter fs-card">
+                            <h3>📖 @ch.OrderNum. @ch.Title</h3>
+                            <div class="lessons">
+                                @foreach (var l in ch.Lessons)
+                                {
+                                    var unlocked = _course.HasAccess || l.IsFreePreview;
+                                    <div class="lesson-row @(unlocked ? "unlocked" : "locked")">
+                                        <span class="lesson-icon">@LessonIcon(l.Type)</span>
+                                        <div class="lesson-info">
+                                            <strong>@l.OrderNum. @l.Title</strong>
+                                            <small>
+                                                @TypeLabel(l.Type) · @FormatDuration(l.DurationSeconds)
+                                                @if (l.IsFreePreview) { <span class="free-tag">🔓 مجاني</span> }
+                                            </small>
+                                        </div>
+                                        @if (unlocked)
+                                        {
+                                            <a href="/lessons/@l.Id/watch" class="fs-btn fs-btn-outline fs-btn-sm">▶ شاهد</a>
+                                        }
+                                        else
+                                        {
+                                            <span class="lock">🔒</span>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                @if (_assessments is not null && _assessments.Any())
+                {
+                    <h2 style="margin-top:var(--fs-s-8)">📝 الاختبارات والواجبات</h2>
+                    <div class="assessments">
+                        @foreach (var a in _assessments)
+                        {
+                            <div class="assessment-card fs-card">
+                                <div class="a-icon">@AssIcon(a.Type)</div>
+                                <div class="a-info">
+                                    <strong>@a.Title</strong>
+                                    <small>
+                                        @AssLabel(a.Type) · @a.QuestionsCount سؤال · @a.TotalMarks درجة
+                                        @if (a.TimeLimitMinutes.HasValue) { <text> · ⏱ @a.TimeLimitMinutes دقيقة</text> }
+                                    </small>
+                                </div>
+                                @if (_course.HasAccess && a.IsAvailable && a.QuestionsCount > 0)
+                                {
+                                    <a href="/assessments/@a.Id/take" class="fs-btn fs-btn-primary fs-btn-sm">
+                                        ابدأ ←
+                                    </a>
+                                }
+                                else if (!_course.HasAccess)
+                                {
+                                    <span class="lock">🔒</span>
+                                }
+                                else
+                                {
+                                    <span class="fs-badge">قريبًا</span>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </section>
+
+        <section class="course-section">
+            <div class="fs-container">
+                <h2>💬 منتدى النقاش</h2>
+                <CourseDiscussionsBlock CourseId="@CourseId" />
+            </div>
+        </section>
+
+        <section class="course-section">
+            <div class="fs-container">
+                <h2>⭐ التقييمات والمراجعات</h2>
+                <CourseReviewsBlock CourseId="@CourseId" />
+            </div>
+        </section>
+    }
+</div>
+
+@if (_showPreview && _course is not null && !string.IsNullOrEmpty(_course.PreviewVideoUrl))
+{
+    <div class="preview-modal-backdrop" @onclick="() => _showPreview = false">
+        <div class="preview-modal" @onclick:stopPropagation="true">
+            <button class="preview-close" @onclick="() => _showPreview = false" aria-label="إغلاق">✕</button>
+            @{
+                var embed = ToEmbedUrl(_course.PreviewVideoUrl);
+                var isYt = embed.Contains("youtube.com/embed", StringComparison.OrdinalIgnoreCase);
+            }
+            @if (isYt)
+            {
+                <iframe src="@embed" frameborder="0"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allowfullscreen></iframe>
+            }
+            else
+            {
+                <video controls autoplay src="@embed"></video>
+            }
+        </div>
+    </div>
+}
+
+<style>
+    .course-page { min-height: calc(100vh - 72px); padding-bottom: var(--fs-s-12); }
+    .teacher-link { color: var(--fs-primary); text-decoration: none; font-weight: 600; }
+    .teacher-link:hover { text-decoration: underline; }
+
+    .course-hero {
+        padding: var(--fs-s-10) 0;
+        background: linear-gradient(180deg, var(--fs-primary-soft), transparent);
+    }
+    .hero-inner { display: grid; grid-template-columns: 1.2fr 1fr; gap: var(--fs-s-8); align-items: center; }
+    @@media (max-width: 900px) { .hero-inner { grid-template-columns: 1fr; } }
+
+    .subject-chip {
+        display: inline-block; padding: 4px 12px;
+        border-radius: var(--fs-r-full); font-size: 13px; font-weight: 700;
+    }
+    .hero-top-row { display: flex; align-items: center; gap: var(--fs-s-3); flex-wrap: wrap; }
+    .bookmark-btn {
+        background: white; border: 1px solid var(--fs-border);
+        padding: 6px 14px; border-radius: var(--fs-r-full);
+        font-size: 13px; font-weight: 600; cursor: pointer;
+        transition: all var(--fs-trans);
+    }
+    .bookmark-btn:hover { border-color: var(--fs-primary); color: var(--fs-primary); }
+    .bookmark-btn.active { background: var(--fs-primary); color: white; border-color: var(--fs-primary); }
+    .bookmark-btn:disabled { opacity: 0.6; cursor: wait; }
+    .hero-text h1 { font-size: clamp(1.75rem, 4vw, 2.5rem); margin: var(--fs-s-3) 0 var(--fs-s-2); }
+    .description { font-size: 16px; line-height: 1.7; margin: var(--fs-s-4) 0; }
+    .hero-stats { display: flex; gap: var(--fs-s-6); padding-top: var(--fs-s-4); border-top: 1px solid var(--fs-border); }
+    .stat { display: flex; flex-direction: column; }
+    .stat strong { font-size: 24px; color: var(--fs-primary); font-weight: 800; }
+    .stat span { font-size: 13px; color: var(--fs-text-muted); }
+
+    .hero-visual { position: relative; border-radius: var(--fs-r-xl); overflow: hidden; aspect-ratio: 16/10; }
+    .hero-visual img { width: 100%; height: 100%; object-fit: cover; }
+
+    .preview-btn {
+        position: absolute; top: 12px; inset-inline-start: 12px;
+        display: inline-flex; align-items: center; gap: 8px;
+        background: rgba(0,0,0,0.72); color: white;
+        border: none; padding: 8px 14px; border-radius: var(--fs-r-full);
+        font-size: 13px; font-weight: 700; cursor: pointer;
+        backdrop-filter: blur(6px);
+        transition: all var(--fs-trans);
+    }
+    .preview-btn:hover { background: var(--fs-primary); transform: translateY(-1px); }
+    .preview-play {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 22px; height: 22px; border-radius: 50%;
+        background: white; color: var(--fs-primary); font-size: 11px;
+    }
+
+    .preview-modal-backdrop {
+        position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+        display: flex; align-items: center; justify-content: center;
+        z-index: 9999; padding: var(--fs-s-4);
+    }
+    .preview-modal {
+        position: relative; width: min(960px, 100%);
+        aspect-ratio: 16/9; background: black;
+        border-radius: var(--fs-r-lg); overflow: hidden;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    }
+    .preview-modal iframe, .preview-modal video {
+        width: 100%; height: 100%; border: 0; display: block;
+    }
+    .preview-close {
+        position: absolute; top: 10px; inset-inline-end: 10px;
+        width: 36px; height: 36px; border-radius: 50%;
+        background: rgba(255,255,255,0.15); color: white;
+        border: none; font-size: 16px; cursor: pointer;
+        display: flex; align-items: center; justify-content: center;
+        z-index: 2; transition: background var(--fs-trans);
+    }
+    .preview-close:hover { background: rgba(255,255,255,0.3); }
+
+    .hero-visual .placeholder {
+        width: 100%; height: 100%;
+        background: linear-gradient(135deg, var(--fs-primary), var(--fs-secondary));
+        display: flex; align-items: center; justify-content: center;
+        color: white; font-size: 96px;
+    }
+
+    .access-cta {
+        position: absolute; inset: 0; background: rgba(0,0,0,0.7);
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        color: white; gap: var(--fs-s-3); backdrop-filter: blur(4px);
+    }
+    .access-cta.access-granted { background: rgba(16,185,129,0.85); }
+    .lock-icon { font-size: 48px; }
+
+    .course-content { padding: var(--fs-s-10) 0 0; }
+    .chapters { display: flex; flex-direction: column; gap: var(--fs-s-4); }
+    .chapter h3 { margin: 0 0 var(--fs-s-3); font-size: 18px; }
+    .lessons { display: flex; flex-direction: column; gap: var(--fs-s-2); }
+    .lesson-row {
+        display: flex; align-items: center; gap: var(--fs-s-3);
+        padding: var(--fs-s-3); border-radius: var(--fs-r-md);
+        background: var(--fs-bg); transition: all var(--fs-trans);
+    }
+    .lesson-row.unlocked:hover { background: var(--fs-primary-soft); }
+    .lesson-row.locked { opacity: 0.55; }
+    .lesson-icon { font-size: 24px; }
+    .lesson-info { flex: 1; }
+    .lesson-info strong { display: block; font-size: 14px; }
+    .lesson-info small { font-size: 12px; color: var(--fs-text-muted); }
+    .free-tag { color: var(--fs-success); font-weight: 600; margin-right: var(--fs-s-2); }
+    .lock { font-size: 20px; }
+
+    .assessments { display: flex; flex-direction: column; gap: var(--fs-s-3); }
+    .assessment-card { display: flex; align-items: center; gap: var(--fs-s-4); padding: var(--fs-s-4); }
+    .a-icon { font-size: 32px; }
+    .a-info { flex: 1; }
+    .a-info strong { display: block; font-size: 15px; margin-bottom: 2px; }
+    .a-info small { font-size: 12px; color: var(--fs-text-muted); }
+</style>
+
+@code {
+    [Parameter] public Guid CourseId { get; set; }
+
+    private FSEdu.Shared.Contracts.Courses.CourseDetailDto? _course;
+    private List<FSEdu.Shared.Contracts.Assessments.AssessmentListItemDto>? _assessments;
+    private bool _loaded;
+    private bool _isBookmarked;
+    private bool _bookmarkBusy;
+    private bool _showPreview;
+
+    private static string ToEmbedUrl(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return url;
+        var u = url.Trim();
+        // youtu.be/<id>
+        var m = System.Text.RegularExpressions.Regex.Match(u, @"youtu\.be/([A-Za-z0-9_-]{6,})");
+        if (m.Success) return $"https://www.youtube.com/embed/{m.Groups[1].Value}?autoplay=1&rel=0";
+        // youtube.com/watch?v=<id>
+        m = System.Text.RegularExpressions.Regex.Match(u, @"[?&]v=([A-Za-z0-9_-]{6,})");
+        if (m.Success) return $"https://www.youtube.com/embed/{m.Groups[1].Value}?autoplay=1&rel=0";
+        // already an embed
+        if (u.Contains("youtube.com/embed", StringComparison.OrdinalIgnoreCase)) return u;
+        // plain mp4 / direct file
+        return u;
+    }
+
+    private int TotalLessons => _course?.Chapters.Sum(c => c.Lessons.Length) ?? 0;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            try { _course = await Api.GetCourseDetailsAsync(CourseId); } catch { }
+            try { _assessments = await Api.GetCourseAssessmentsAsync(CourseId); } catch { }
+            if (Auth.IsInRole("Student"))
+            {
+                try { _isBookmarked = await Api.IsCourseBookmarkedAsync(CourseId); } catch { }
+            }
+            _loaded = true; StateHasChanged();
+        }
+    }
+
+    private async Task ToggleBookmark()
+    {
+        _bookmarkBusy = true; StateHasChanged();
+        try
+        {
+            var result = await Api.ToggleCourseBookmarkAsync(CourseId);
+            if (result.HasValue) _isBookmarked = result.Value;
+        }
+        finally { _bookmarkBusy = false; StateHasChanged(); }
+    }
+
+    private static string TypeLabel(string t) => t switch
+    {
+        "Recorded" => "مسجّل", "Live" => "مباشر", "Document" => "مذكرة", "Quiz" => "اختبار", _ => t
+    };
+
+    private static string LessonIcon(string t) => t switch
+    {
+        "Recorded" => "🎥", "Live" => "📡", "Document" => "📄", "Quiz" => "📝", _ => "📘"
+    };
+
+    private static string FormatDuration(int sec)
+    {
+        var m = sec / 60;
+        return m > 60 ? $"{m / 60}س {m % 60}د" : $"{m} دقيقة";
+    }
+
+    private static string AssIcon(string t) => t switch
+    {
+        "Quiz" => "📝", "Assignment" => "📘", "Exam" => "🎓", _ => "📋"
+    };
+
+    private static string AssLabel(string t) => t switch
+    {
+        "Quiz" => "اختبار قصير", "Assignment" => "واجب", "Exam" => "امتحان", _ => t
+    };
+}

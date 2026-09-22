@@ -1,0 +1,275 @@
+@page "/teacher/live"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject IConfiguration Config
+
+<PageTitle>الحصص المباشرة — المدرس</PageTitle>
+
+<div class="page">
+    <div class="fs-container">
+        <div class="page-head">
+            <div>
+                <h1>🎥 حصصي المباشرة</h1>
+                <p class="fs-text-muted">جدول، أبدأ، وأدر حصصك المباشرة</p>
+            </div>
+            <a href="/teacher/live/new" class="fs-btn fs-btn-primary">+ جدولة حصة</a>
+        </div>
+
+        @if (!_loaded)
+        {
+            <div class="fs-center" style="padding:60px"><span class="fs-spinner"></span></div>
+        }
+        else if (!Auth.IsAuthenticated || !Auth.IsInRole("Teacher"))
+        {
+            <div class="fs-alert fs-alert-error">للمدرسين فقط. <a href="/login">دخول</a></div>
+        }
+        else if (_sessions is null || !_sessions.Any())
+        {
+            <div class="fs-card fs-center empty">
+                <div style="font-size:64px">📅</div>
+                <h3>لا توجد حصص مجدولة</h3>
+                <p class="fs-text-muted">جدول حصتك المباشرة الأولى</p>
+                <a href="/teacher/live/new" class="fs-btn fs-btn-primary">جدولة حصة</a>
+            </div>
+        }
+        else
+        {
+            <div class="sessions">
+                @foreach (var s in _sessions)
+                {
+                    <div class="session-card fs-card @GetStatusClass(s.Status)">
+                        <div class="status-bar @s.Status.ToLower()">@StatusLabel(s.Status)</div>
+                        <div class="card-body">
+                            <h3>@s.Title</h3>
+                            <p class="fs-text-muted">@s.SubjectName · @s.StageName</p>
+                            <div class="meta">
+                                <span>📅 @s.ScheduledAtUtc.ToLocalTime().ToString("yyyy/MM/dd HH:mm")</span>
+                                <span>⏱ @s.DurationMinutes دقيقة</span>
+                                @if (s.Status == "Live")
+                                {
+                                    <span style="color:var(--fs-danger);font-weight:700">● مباشر — @s.CurrentParticipants حاضر</span>
+                                }
+                            </div>
+                        </div>
+                        <div class="actions">
+                            @if (s.Status == "Scheduled")
+                            {
+                                <button class="fs-btn fs-btn-primary" @onclick="() => Start(s.Id)" disabled="@(_busy == s.Id)">
+                                    @if (_busy == s.Id) { <span class="fs-spinner"></span> }
+                                    🎬 بدء البث
+                                </button>
+                                <a href="/live/@s.Id" class="fs-btn fs-btn-outline">معاينة</a>
+                                <a href="@($"/teacher/live/new?id={s.Id}")" class="fs-btn fs-btn-outline">✏️ تعديل</a>
+                                <button class="fs-btn fs-btn-outline danger" @onclick="() => Cancel(s.Id)" disabled="@(_busy == s.Id)">
+                                    ❌ إلغاء
+                                </button>
+                            }
+                            else if (s.Status == "Live")
+                            {
+                                <a href="/live/@s.Id" class="fs-btn fs-btn-primary">↗ ادخل الغرفة</a>
+                                <button class="fs-btn fs-btn-outline" @onclick="() => End(s.Id)" disabled="@(_busy == s.Id)">
+                                    🛑 إنهاء
+                                </button>
+                            }
+                            else
+                            {
+                                <a href="/live/@s.Id" class="fs-btn fs-btn-outline">عرض</a>
+                                @if (!string.IsNullOrEmpty(s.RecordingUrl))
+                                {
+                                    <a href="@BuildRecordingUrl(s.RecordingUrl)" target="_blank"
+                                       class="fs-btn fs-btn-primary">▶ التسجيل</a>
+                                }
+                                <button class="fs-btn fs-btn-outline" @onclick="() => OpenReschedule(s.Id, s.Title)" disabled="@(_busy == s.Id)">
+                                    📅 إعادة جدولة
+                                </button>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+
+        @if (_resOpen)
+        {
+            <div class="res-backdrop" @onclick="CloseReschedule"></div>
+            <div class="res-modal fs-card" @onclick:stopPropagation="true">
+                <h3>📅 إعادة جدولة الحصّة</h3>
+                <p class="fs-text-muted">يُنشأ صفّ جديد مجدول بنفس بيانات "@_resTitle".</p>
+
+                <label class="res-label">الموعد الجديد</label>
+                <input type="datetime-local" class="res-input" @bind="_resDateTime" />
+
+                <label class="res-label">المدة (دقيقة) — اختياري</label>
+                <input type="number" class="res-input" min="15" max="240" @bind="_resDuration" placeholder="نفس مدة الحصة الأصلية" />
+
+                <label class="res-label">عنوان جديد — اختياري</label>
+                <input type="text" class="res-input" maxlength="255" @bind="_resTitleOverride" placeholder="افتراضي: نفس العنوان الأصلي" />
+
+                @if (!string.IsNullOrEmpty(_resError))
+                {
+                    <div class="fs-alert fs-alert-error">@_resError</div>
+                }
+
+                <div class="res-actions">
+                    <button class="fs-btn fs-btn-primary" @onclick="ConfirmReschedule" disabled="@_resBusy">
+                        @(_resBusy ? "جارٍ الإنشاء..." : "إنشاء")
+                    </button>
+                    <button class="fs-btn fs-btn-outline" @onclick="CloseReschedule" disabled="@_resBusy">إلغاء</button>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .page { padding: var(--fs-s-10) 0; min-height: calc(100vh - 72px); }
+    .page-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--fs-s-6); flex-wrap: wrap; gap: var(--fs-s-3); }
+    .empty { padding: 80px; text-align: center; }
+    .empty h3 { margin: var(--fs-s-3) 0 var(--fs-s-2); }
+    .empty .fs-btn { margin-top: var(--fs-s-3); }
+
+    .sessions { display: flex; flex-direction: column; gap: var(--fs-s-4); }
+    .session-card { padding: 0; overflow: hidden; }
+    .status-bar { padding: 6px var(--fs-s-4); font-size: 13px; font-weight: 700; }
+    .status-bar.scheduled { background: var(--fs-primary-soft); color: var(--fs-primary); }
+    .status-bar.live { background: var(--fs-danger); color: white; }
+    .status-bar.ended { background: var(--fs-border); color: var(--fs-text-muted); }
+    .status-bar.cancelled { background: #FEE2E2; color: var(--fs-danger); }
+
+    .card-body { padding: var(--fs-s-4); }
+    .card-body h3 { margin: 0 0 4px; font-size: 18px; }
+    .card-body p { margin: 0 0 var(--fs-s-3); font-size: 13px; }
+    .meta { display: flex; gap: var(--fs-s-4); font-size: 13px; color: var(--fs-text-muted); flex-wrap: wrap; }
+
+    .actions { display: flex; gap: var(--fs-s-2); padding: 0 var(--fs-s-4) var(--fs-s-4); flex-wrap: wrap; }
+    .actions .fs-btn { flex: 1; min-width: 120px; }
+
+    .res-backdrop { position: fixed; inset: 0; background: rgba(15,23,42,0.5); z-index: 300; animation: fadeIn 150ms ease; }
+    @@keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+    .res-modal {
+        position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+        z-index: 301; width: min(440px, 92vw); padding: var(--fs-s-5);
+        animation: resPop 180ms ease;
+    }
+    @@keyframes resPop {
+        from { opacity: 0; transform: translate(-50%, -50%) scale(0.95); }
+        to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+    }
+    .res-modal h3 { margin: 0 0 var(--fs-s-1); }
+    .res-label { display: block; font-size: 13px; font-weight: 600; margin: var(--fs-s-3) 0 var(--fs-s-1); }
+    .res-input { width: 100%; padding: var(--fs-s-2) var(--fs-s-3); border: 1px solid var(--fs-border); border-radius: var(--fs-r-md); font-family: inherit; font-size: 14px; }
+    .res-input:focus { outline: none; border-color: var(--fs-primary); }
+    .res-actions { margin-top: var(--fs-s-4); display: flex; gap: var(--fs-s-2); }
+    .actions .fs-btn.danger { color: var(--fs-danger); border-color: var(--fs-danger); }
+    .actions .fs-btn.danger:hover { background: var(--fs-danger); color: white; }
+</style>
+
+@code {
+    private List<FSEdu.Shared.Contracts.LiveClassroom.LiveSessionListItemDto>? _sessions;
+    private bool _loaded;
+    private Guid? _busy;
+    private string _apiBase = "";
+
+    // Reschedule modal
+    private bool _resOpen;
+    private bool _resBusy;
+    private Guid _resSourceId;
+    private string _resTitle = "";
+    private DateTime _resDateTime = DateTime.Now.AddDays(1);
+    private int? _resDuration;
+    private string _resTitleOverride = "";
+    private string? _resError;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _apiBase = Config["ApiBaseUrl"] ?? "http://localhost:5080/";
+            await Auth.RestoreAsync();
+            await Load();
+        }
+    }
+
+    private async Task Load()
+    {
+        if (!Auth.IsAuthenticated || !Auth.IsInRole("Teacher")) { _loaded = true; StateHasChanged(); return; }
+        try { _sessions = await Api.GetMyLiveSessionsAsync(); }
+        catch { _sessions = new(); }
+        _loaded = true; StateHasChanged();
+    }
+
+    private async Task Start(Guid id)
+    {
+        _busy = id; StateHasChanged();
+        try { var err = await Api.StartLiveSessionAsync(id); if (err is null) await Load(); }
+        finally { _busy = null; }
+    }
+
+    private async Task End(Guid id)
+    {
+        _busy = id; StateHasChanged();
+        try { var err = await Api.EndLiveSessionAsync(id); if (err is null) await Load(); }
+        finally { _busy = null; }
+    }
+
+    private async Task Cancel(Guid id)
+    {
+        _busy = id; StateHasChanged();
+        try { var err = await Api.CancelLiveSessionAsync(id); if (err is null) await Load(); }
+        finally { _busy = null; }
+    }
+
+    private void OpenReschedule(Guid id, string title)
+    {
+        _resSourceId = id;
+        _resTitle = title;
+        _resTitleOverride = "";
+        _resDuration = null;
+        _resDateTime = DateTime.Now.AddDays(1).Date.AddHours(18); // tomorrow 6pm default
+        _resError = null;
+        _resOpen = true;
+        StateHasChanged();
+    }
+
+    private void CloseReschedule()
+    {
+        _resOpen = false;
+        StateHasChanged();
+    }
+
+    private async Task ConfirmReschedule()
+    {
+        _resError = null;
+        if (_resDateTime <= DateTime.Now) { _resError = "الموعد يجب أن يكون مستقبليًا"; return; }
+        if (_resDuration.HasValue && (_resDuration.Value < 15 || _resDuration.Value > 240))
+        { _resError = "المدة بين 15 و 240 دقيقة"; return; }
+
+        _resBusy = true; StateHasChanged();
+        try
+        {
+            var (newId, err) = await Api.RescheduleLiveSessionAsync(
+                _resSourceId,
+                _resDateTime.ToUniversalTime(),
+                _resDuration,
+                string.IsNullOrWhiteSpace(_resTitleOverride) ? null : _resTitleOverride.Trim());
+            if (err is not null) { _resError = err.Message ?? "تعذّر الإنشاء"; return; }
+            _resOpen = false;
+            await Load();
+        }
+        finally { _resBusy = false; StateHasChanged(); }
+    }
+
+    private static string StatusLabel(string s) => s switch
+    {
+        "Scheduled" => "مجدولة", "Live" => "مباشرة الآن", "Ended" => "انتهت", "Cancelled" => "ملغاة", _ => s
+    };
+
+    private static string GetStatusClass(string s) => s.ToLower();
+
+    private string BuildRecordingUrl(string url)
+        => url.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+           || url.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+            ? url
+            : _apiBase.TrimEnd('/') + url;
+}

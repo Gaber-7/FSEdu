@@ -1,0 +1,155 @@
+@page "/courses"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+
+<PageTitle>الدورات — FSEdu</PageTitle>
+
+<div class="browse-page">
+    <div class="fs-container">
+        <div class="browse-head">
+            <h1>📚 استكشف الدورات</h1>
+            <p class="fs-text-muted">دورات من أفضل المدرسين — لكل المراحل والمواد</p>
+        </div>
+
+        <div class="filters fs-card">
+            <div class="filter-group">
+                <label class="fs-label">المرحلة</label>
+                <select class="fs-select" @bind="_stageId" @bind:after="OnStageChanged">
+                    <option value="0">كل المراحل</option>
+                    @if (_stages is not null)
+                    {
+                        @foreach (var s in _stages)
+                        {
+                            <option value="@s.Id">@s.NameAr</option>
+                        }
+                    }
+                </select>
+            </div>
+            <div class="filter-group">
+                <label class="fs-label">المادة</label>
+                <select class="fs-select" @bind="_subjectId" @bind:after="Load">
+                    <option value="0">كل المواد</option>
+                    @if (_subjects is not null)
+                    {
+                        @foreach (var s in _subjects)
+                        {
+                            <option value="@s.Id">@s.NameAr</option>
+                        }
+                    }
+                </select>
+            </div>
+        </div>
+
+        @if (_loading)
+        {
+            <div class="fs-center" style="padding:60px"><span class="fs-spinner"></span></div>
+        }
+        else if (_courses is null || !_courses.Any())
+        {
+            <div class="fs-card fs-center empty">
+                <div style="font-size:64px">🔍</div>
+                <h3>لا توجد دورات متاحة</h3>
+                <p class="fs-text-muted">جرّب تغيير الفلاتر أو عُد لاحقًا</p>
+            </div>
+        }
+        else
+        {
+            <div class="fs-grid fs-grid-3">
+                @foreach (var c in _courses)
+                {
+                    <a href="/courses/@c.Id" class="fs-card fs-card-hover course-card">
+                        <div class="course-thumb">
+                            @if (!string.IsNullOrEmpty(c.ThumbnailUrl))
+                            {
+                                <img src="@c.ThumbnailUrl" alt="@c.Title" />
+                            }
+                            else
+                            {
+                                <span class="thumb-icon">📚</span>
+                            }
+                        </div>
+                        <div class="course-body">
+                            <span class="subject-tag">@c.SubjectName</span>
+                            <h3>@c.Title</h3>
+                            <p class="fs-text-muted">@c.StageName</p>
+                            <div class="course-meta">
+                                <span>📖 @c.LessonsCount درس</span>
+                                @if (c.EnrollmentCount > 0) { <span>👥 @c.EnrollmentCount</span> }
+                                @if (c.RatingAvg > 0) { <span>⭐ @c.RatingAvg</span> }
+                            </div>
+                        </div>
+                    </a>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .browse-page { padding: var(--fs-s-10) 0; min-height: calc(100vh - 72px); }
+    .browse-head { text-align: center; margin-bottom: var(--fs-s-6); }
+    .browse-head h1 { font-size: clamp(2rem, 4vw, 2.5rem); }
+    .filters { display: flex; gap: var(--fs-s-4); margin-bottom: var(--fs-s-6); }
+    .filter-group { flex: 1; }
+    @@media (max-width: 600px) { .filters { flex-direction: column; } }
+    .empty { padding: 80px; text-align: center; }
+
+    .course-card { padding: 0; overflow: hidden; color: inherit; text-decoration: none; }
+    .course-thumb {
+        height: 180px;
+        background: linear-gradient(135deg, var(--fs-primary-soft), var(--fs-secondary-soft));
+        display: flex; align-items: center; justify-content: center;
+    }
+    .course-thumb img { width: 100%; height: 100%; object-fit: cover; }
+    .thumb-icon { font-size: 64px; }
+    .course-body { padding: var(--fs-s-4); }
+    .subject-tag {
+        display: inline-block; font-size: 11px; font-weight: 700;
+        padding: 3px 10px; border-radius: var(--fs-r-full);
+        background: var(--fs-primary-soft); color: var(--fs-primary);
+        margin-bottom: var(--fs-s-2);
+    }
+    .course-body h3 { font-size: 16px; margin: 0 0 var(--fs-s-1); }
+    .course-body p { margin: 0 0 var(--fs-s-3); font-size: 13px; }
+    .course-meta { display: flex; gap: var(--fs-s-3); font-size: 12px; color: var(--fs-text-muted); }
+</style>
+
+@code {
+    private List<FSEdu.Shared.Contracts.Reference.StageDto>? _stages;
+    private List<FSEdu.Shared.Contracts.Reference.SubjectDto>? _subjects;
+    private List<FSEdu.Shared.Contracts.Courses.CourseListItemDto>? _courses;
+    private int _stageId;
+    private int _subjectId;
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _stages = (await Api.GetStagesAsync()).Where(s => s.ParentStageId != null).OrderBy(s => s.LevelOrder).ToList();
+        }
+        catch { }
+        await Load();
+    }
+
+    private async Task OnStageChanged()
+    {
+        _subjectId = 0;
+        if (_stageId == 0) { _subjects = null; }
+        else { try { _subjects = await Api.GetSubjectsAsync(_stageId); } catch { _subjects = new(); } }
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        _loading = true; StateHasChanged();
+        try
+        {
+            _courses = await Api.BrowseCoursesAsync(
+                _stageId == 0 ? null : _stageId,
+                _subjectId == 0 ? null : _subjectId);
+        }
+        catch { _courses = new(); }
+        finally { _loading = false; StateHasChanged(); }
+    }
+}

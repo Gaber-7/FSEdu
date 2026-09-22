@@ -1,0 +1,296 @@
+@page "/notifications"
+@rendermode InteractiveServer
+@using Microsoft.JSInterop
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject IConfiguration Config
+
+<PageTitle>الإشعارات — FSEdu</PageTitle>
+
+<div class="notifs-page">
+    <div class="fs-container">
+        <div class="page-head">
+            <div>
+                <h1>🔔 الإشعارات</h1>
+                <p class="fs-text-muted">كل التحديثات والإشعارات في مكان واحد</p>
+            </div>
+            @if (_items is not null && _items.Any(n => !n.IsRead))
+            {
+                <button class="fs-btn fs-btn-outline" @onclick="MarkAllRead">
+                    ✓ تعليم الكل كمقروء
+                </button>
+            }
+        </div>
+
+        @* Push enable / disable banner *@
+        @if (_pushBanner is not null)
+        {
+            <div class="push-banner @_pushBanner.Class">
+                <span class="push-icon">@_pushBanner.Icon</span>
+                <div>
+                    <strong>@_pushBanner.Title</strong>
+                    <small>@_pushBanner.Body</small>
+                </div>
+                @if (_pushBanner.ShowEnable)
+                {
+                    <button class="fs-btn fs-btn-primary" disabled="@_pushBusy" @onclick="EnablePush">
+                        @if (_pushBusy) { <span class="fs-spinner"></span> } else { <span>🔔 تفعيل الإشعارات</span> }
+                    </button>
+                }
+                else if (_pushBanner.ShowDisable)
+                {
+                    <button class="fs-btn fs-btn-outline" disabled="@_pushBusy" @onclick="DisablePush">
+                        إلغاء التفعيل
+                    </button>
+                }
+            </div>
+        }
+
+        @if (!_loaded)
+        {
+            <div class="fs-center" style="padding:60px"><span class="fs-spinner"></span></div>
+        }
+        else if (!Auth.IsAuthenticated)
+        {
+            <div class="fs-alert fs-alert-error">يجب تسجيل الدخول. <a href="/login">تسجيل الدخول</a></div>
+        }
+        else if (_items is null || !_items.Any())
+        {
+            <div class="fs-card fs-center empty">
+                <div style="font-size:64px">🔕</div>
+                <h3>لا توجد إشعارات</h3>
+                <p class="fs-text-muted">سيظهر هنا أي تحديث مهم في حسابك</p>
+            </div>
+        }
+        else
+        {
+            <div class="notifs-list">
+                @foreach (var n in _items)
+                {
+                    <div class="notif-card fs-card @(!n.IsRead ? "unread" : "")"
+                         @onclick="() => Open(n)">
+                        <div class="notif-icon-large">@TypeIcon(n.Type)</div>
+                        <div class="notif-content">
+                            <strong>@n.Title</strong>
+                            <p>@n.Body</p>
+                            <small>@RelativeTime(n.CreatedAtUtc) · @n.CreatedAtUtc.ToString("yyyy/MM/dd HH:mm")</small>
+                        </div>
+                        @if (!n.IsRead) { <span class="dot-large"></span> }
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .notifs-page { padding: var(--fs-s-10) 0; min-height: calc(100vh - 72px); }
+    .page-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--fs-s-6); flex-wrap: wrap; gap: var(--fs-s-3); }
+    .empty { padding: 80px; text-align: center; }
+    .empty h3 { margin: var(--fs-s-3) 0 var(--fs-s-2); }
+
+    .notifs-list { display: flex; flex-direction: column; gap: var(--fs-s-3); }
+
+    .notif-card {
+        display: flex; align-items: start; gap: var(--fs-s-4);
+        cursor: pointer;
+        transition: all var(--fs-trans);
+        position: relative;
+    }
+    .notif-card:hover { transform: translateX(-4px); border-color: var(--fs-primary); }
+    .notif-card.unread { background: linear-gradient(to right, rgba(91,79,229,0.05), transparent); border-color: var(--fs-primary-soft); }
+
+    .notif-icon-large {
+        width: 48px; height: 48px;
+        border-radius: 50%;
+        background: var(--fs-primary-soft); color: var(--fs-primary);
+        display: flex; align-items: center; justify-content: center;
+        font-size: 24px; flex-shrink: 0;
+    }
+
+    .notif-content { flex: 1; }
+    .notif-content strong { display: block; font-size: 16px; margin-bottom: var(--fs-s-1); }
+    .notif-content p { margin: 0 0 var(--fs-s-2); font-size: 14px; line-height: 1.5; color: var(--fs-text-muted); }
+    .notif-content small { font-size: 12px; color: var(--fs-text-subtle); }
+
+    .dot-large { width: 10px; height: 10px; border-radius: 50%; background: var(--fs-primary); margin-top: 12px; flex-shrink: 0; }
+
+    .push-banner {
+        display: flex; align-items: center; gap: var(--fs-s-3);
+        padding: var(--fs-s-4); border-radius: var(--fs-r-md);
+        margin-bottom: var(--fs-s-4); flex-wrap: wrap;
+    }
+    .push-banner.enable { background: linear-gradient(135deg, var(--fs-primary-soft), white); border: 1px solid var(--fs-primary); }
+    .push-banner.success { background: rgba(16,185,129,0.12); border: 1px solid #10B981; }
+    .push-banner.unsupported { background: var(--fs-bg); border: 1px solid var(--fs-border); }
+    .push-banner.denied { background: rgba(220,38,38,0.10); border: 1px solid #DC2626; }
+    .push-banner > div { flex: 1; min-width: 200px; }
+    .push-banner strong { display: block; font-size: 15px; margin-bottom: 2px; }
+    .push-banner small { display: block; font-size: 13px; color: var(--fs-text-muted); }
+    .push-icon { font-size: 30px; flex-shrink: 0; }
+</style>
+
+@code {
+    private List<FSEdu.Shared.Contracts.Notifications.NotificationDto>? _items;
+    private bool _loaded;
+
+    private record PushBanner(string Class, string Icon, string Title, string Body, bool ShowEnable, bool ShowDisable);
+    private PushBanner? _pushBanner;
+    private string? _vapidKey;
+    private bool _pushBusy;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            await Load();
+            await RefreshPushBanner();
+        }
+    }
+
+    private async Task Load()
+    {
+        if (!Auth.IsAuthenticated) { _loaded = true; StateHasChanged(); return; }
+        try { _items = await Api.GetMyNotificationsAsync(50); }
+        catch { _items = new(); }
+        _loaded = true; StateHasChanged();
+    }
+
+    private async Task RefreshPushBanner()
+    {
+        if (!Auth.IsAuthenticated) return;
+        try
+        {
+            var vapid = await Api.GetVapidKeyAsync();
+            if (vapid is null || !vapid.Enabled || string.IsNullOrEmpty(vapid.PublicKey))
+            {
+                _pushBanner = null; // backend not configured — hide banner
+                return;
+            }
+            _vapidKey = vapid.PublicKey;
+
+            var status = await JS.InvokeAsync<System.Text.Json.JsonElement>("fseduPush.getStatus");
+            var supported = status.TryGetProperty("supported", out var s) && s.GetBoolean();
+            if (!supported)
+            {
+                _pushBanner = new PushBanner("unsupported", "ℹ️",
+                    "متصفحك لا يدعم الإشعارات",
+                    "جرّب Chrome أو Edge أو Firefox للحصول على إشعارات في الوقت الفعلي.",
+                    false, false);
+                return;
+            }
+
+            var permission = status.TryGetProperty("permission", out var p) ? p.GetString() : "default";
+            var subscribed = status.TryGetProperty("subscribed", out var sb) && sb.GetBoolean();
+
+            if (permission == "denied")
+                _pushBanner = new PushBanner("denied", "🚫",
+                    "إشعارات المتصفح محجوبة",
+                    "افتح إعدادات الموقع في متصفحك واسمح بالإشعارات لكي تتلقى تنبيهات الحصص.",
+                    false, false);
+            else if (subscribed)
+                _pushBanner = new PushBanner("success", "✅",
+                    "إشعارات المتصفح مفعّلة",
+                    "ستستلم تنبيهات حتى وأنت خارج المنصة.",
+                    false, true);
+            else
+                _pushBanner = new PushBanner("enable", "🔔",
+                    "فعّل إشعارات المتصفح",
+                    "احصل على تنبيهات فورية عند بدء حصة مباشرة أو ورود رد على سؤالك.",
+                    true, false);
+        }
+        catch { _pushBanner = null; }
+        finally { StateHasChanged(); }
+    }
+
+    private async Task EnablePush()
+    {
+        if (string.IsNullOrEmpty(_vapidKey)) return;
+        _pushBusy = true; StateHasChanged();
+        try
+        {
+            var apiBase = Config["ApiBaseUrl"] ?? "http://localhost:5080/";
+            await JS.InvokeAsync<object>("fseduPush.enable", new
+            {
+                vapidKey = _vapidKey,
+                apiBase = apiBase,
+                appAuthToken = Api.GetCurrentToken()
+            });
+            await RefreshPushBanner();
+        }
+        catch (Exception ex)
+        {
+            _pushBanner = new PushBanner("denied", "⚠️", "تعذّر تفعيل الإشعارات", ex.Message, true, false);
+        }
+        finally { _pushBusy = false; StateHasChanged(); }
+    }
+
+    private async Task DisablePush()
+    {
+        _pushBusy = true; StateHasChanged();
+        try
+        {
+            var apiBase = Config["ApiBaseUrl"] ?? "http://localhost:5080/";
+            await JS.InvokeAsync<object>("fseduPush.disable", new
+            {
+                apiBase = apiBase,
+                appAuthToken = Api.GetCurrentToken()
+            });
+            await RefreshPushBanner();
+        }
+        catch { /* ignore */ }
+        finally { _pushBusy = false; StateHasChanged(); }
+    }
+
+    private async Task Open(FSEdu.Shared.Contracts.Notifications.NotificationDto n)
+    {
+        if (!n.IsRead) await Api.MarkNotificationReadAsync(n.Id);
+
+        if (!string.IsNullOrEmpty(n.DataJson))
+        {
+            try
+            {
+                var data = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object>>(n.DataJson);
+                if (data is not null && data.TryGetValue("url", out var url) && url is not null)
+                {
+                    Nav.NavigateTo(url.ToString()!);
+                    return;
+                }
+            }
+            catch { }
+        }
+
+        await Load();
+    }
+
+    private async Task MarkAllRead()
+    {
+        await Api.MarkAllNotificationsReadAsync();
+        await Load();
+    }
+
+    private static string TypeIcon(string type) => type switch
+    {
+        var t when t.StartsWith("payment.approved") => "✅",
+        var t when t.StartsWith("payment.rejected") => "⚠️",
+        var t when t.StartsWith("course.approved") => "📚",
+        var t when t.StartsWith("course.rejected") => "❌",
+        var t when t.StartsWith("teacher.approved") => "🎉",
+        var t when t.StartsWith("ticket.created") => "❓",
+        var t when t.StartsWith("ticket.replied") => "💬",
+        _ => "🔔"
+    };
+
+    private static string RelativeTime(DateTime utc)
+    {
+        var diff = DateTime.UtcNow - utc;
+        if (diff.TotalMinutes < 1) return "الآن";
+        if (diff.TotalMinutes < 60) return $"منذ {(int)diff.TotalMinutes} دقيقة";
+        if (diff.TotalHours < 24) return $"منذ {(int)diff.TotalHours} ساعة";
+        if (diff.TotalDays < 7) return $"منذ {(int)diff.TotalDays} يوم";
+        return utc.ToString("yyyy/MM/dd");
+    }
+}

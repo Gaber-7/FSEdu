@@ -1,0 +1,199 @@
+@inject FSEdu.Web.Services.ApiClient Api
+
+<div class="reviews-block">
+    @if (_data is null)
+    {
+        <div class="fs-center" style="padding:30px"><span class="fs-spinner"></span></div>
+    }
+    else
+    {
+        <div class="reviews-summary">
+            <div class="rs-overall">
+                <div class="rs-avg">@_data.AverageRating.ToString("0.0")</div>
+                <div class="rs-stars">@RenderStars((int)Math.Round((double)_data.AverageRating))</div>
+                <small>@_data.TotalCount تقييم</small>
+            </div>
+            @if (_data.TotalCount > 0)
+            {
+                <div class="rs-bars">
+                    @for (int s = 5; s >= 1; s--)
+                    {
+                        var idx = s - 1;
+                        var n = _data.StarBreakdown[idx];
+                        var pct = _data.TotalCount == 0 ? 0 : (int)Math.Round(n * 100.0 / _data.TotalCount);
+                        <div class="rs-bar-row">
+                            <span class="rs-num">@s ★</span>
+                            <div class="rs-bar"><div class="rs-fill" style="width:@(pct)%"></div></div>
+                            <span class="rs-count">@n</span>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+
+        @if (_data.CanReview)
+        {
+            <div class="my-review fs-card">
+                <strong>@(_data.MyReview is null ? "أضف تقييمك" : "تعديل تقييمك")</strong>
+                <div class="rate-stars">
+                    @for (int i = 1; i <= 5; i++)
+                    {
+                        var v = i;
+                        <button class="rate-star @(_myRating >= v ? "on" : "")"
+                                type="button" @onclick="() => SetRating(v)">★</button>
+                    }
+                </div>
+                <textarea class="fs-input" rows="3"
+                          placeholder="شاركنا رأيك (اختياري)..."
+                          @bind="_myComment"></textarea>
+                <div class="my-review-foot">
+                    <button class="fs-btn fs-btn-primary"
+                            disabled="@(_busy || _myRating < 1)"
+                            @onclick="Submit">
+                        @if (_busy) { <span class="fs-spinner"></span> }
+                        @(_data.MyReview is null ? "نشر التقييم" : "تحديث التقييم")
+                    </button>
+                    @if (_error is not null)
+                    { <small style="color:var(--fs-danger);margin-right:auto">@_error</small> }
+                </div>
+            </div>
+        }
+
+        @if (_data.Reviews.Count > 0)
+        {
+            <h4 class="reviews-h">آراء الطلاب</h4>
+            <div class="reviews-list">
+                @foreach (var r in _data.Reviews)
+                {
+                    <div class="review-card">
+                        <div class="review-head">
+                            <div class="review-avatar">@r.StudentName.FirstOrDefault()</div>
+                            <div>
+                                <strong>@r.StudentName</strong>
+                                <small class="fs-text-muted">@FormatRelative(r.UpdatedAtUtc ?? r.CreatedAtUtc)</small>
+                            </div>
+                            <div class="review-stars">@RenderStars(r.Rating)</div>
+                        </div>
+                        @if (!string.IsNullOrEmpty(r.Comment))
+                        {
+                            <p class="review-body">@r.Comment</p>
+                        }
+                    </div>
+                }
+            </div>
+        }
+        else if (!_data.CanReview)
+        {
+            <p class="fs-text-muted">لا توجد تقييمات بعد.</p>
+        }
+    }
+</div>
+
+<style>
+    .reviews-block { display: flex; flex-direction: column; gap: var(--fs-s-4); }
+
+    .reviews-summary {
+        display: grid; grid-template-columns: 200px 1fr; gap: var(--fs-s-5);
+        padding: var(--fs-s-4); background: var(--fs-bg); border-radius: var(--fs-r-md);
+    }
+    @@media (max-width: 600px) { .reviews-summary { grid-template-columns: 1fr; gap: var(--fs-s-3); } }
+
+    .rs-overall { text-align: center; }
+    .rs-avg { font-size: 48px; font-weight: 800; color: var(--fs-primary); line-height: 1; }
+    .rs-stars { font-size: 22px; color: #F59E0B; margin: 4px 0; }
+    .rs-overall small { color: var(--fs-text-muted); font-size: 12px; }
+
+    .rs-bars { display: flex; flex-direction: column; gap: 6px; }
+    .rs-bar-row { display: flex; align-items: center; gap: var(--fs-s-2); font-size: 13px; }
+    .rs-num { width: 32px; }
+    .rs-bar { flex: 1; height: 8px; background: white; border-radius: var(--fs-r-full); overflow: hidden; }
+    .rs-fill { height: 100%; background: linear-gradient(90deg, #F59E0B, #FCD34D); }
+    .rs-count { width: 30px; text-align: left; color: var(--fs-text-muted); }
+
+    .my-review { padding: var(--fs-s-4); display: flex; flex-direction: column; gap: var(--fs-s-2); }
+    .rate-stars { display: flex; gap: 4px; }
+    .rate-star {
+        width: 36px; height: 36px; border: none; background: transparent;
+        font-size: 26px; color: #CBD5E1; cursor: pointer;
+        transition: transform 0.1s;
+    }
+    .rate-star:hover { transform: scale(1.1); }
+    .rate-star.on { color: #F59E0B; }
+    .my-review-foot { display: flex; align-items: center; gap: var(--fs-s-2); }
+
+    .reviews-h { font-size: 16px; margin: var(--fs-s-3) 0 var(--fs-s-2); }
+    .reviews-list { display: flex; flex-direction: column; gap: var(--fs-s-2); }
+    .review-card {
+        padding: var(--fs-s-3); background: white;
+        border: 1px solid var(--fs-border); border-radius: var(--fs-r-md);
+    }
+    .review-head { display: flex; align-items: center; gap: var(--fs-s-2); margin-bottom: 6px; flex-wrap: wrap; }
+    .review-avatar {
+        width: 32px; height: 32px; border-radius: 50%;
+        background: linear-gradient(135deg, var(--fs-primary), var(--fs-secondary));
+        color: white; font-weight: 800; font-size: 14px;
+        display: flex; align-items: center; justify-content: center;
+    }
+    .review-head strong { display: block; font-size: 13px; }
+    .review-head small { display: block; font-size: 11px; }
+    .review-stars { margin-right: auto; color: #F59E0B; font-size: 14px; }
+    .review-body { margin: 0; font-size: 14px; line-height: 1.6; color: var(--fs-text); }
+</style>
+
+@code {
+    [Parameter] public Guid CourseId { get; set; }
+
+    private FSEdu.Shared.Contracts.Courses.CourseReviewsResponse? _data;
+    private int _myRating;
+    private string _myComment = "";
+    private bool _busy;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        try { _data = await Api.GetCourseReviewsAsync(CourseId); }
+        catch { _data = null; }
+        if (_data?.MyReview is { } mr)
+        {
+            _myRating = mr.Rating;
+            _myComment = mr.Comment ?? "";
+        }
+        StateHasChanged();
+    }
+
+    private void SetRating(int v) { _myRating = v; _error = null; }
+
+    private async Task Submit()
+    {
+        if (_myRating < 1 || _myRating > 5) return;
+        _busy = true; _error = null; StateHasChanged();
+        try
+        {
+            var err = await Api.SubmitCourseReviewAsync(CourseId,
+                new FSEdu.Shared.Contracts.Courses.SubmitReviewRequest(
+                    _myRating, string.IsNullOrWhiteSpace(_myComment) ? null : _myComment.Trim()));
+            if (err is not null) _error = err.Message;
+            else await Load();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; StateHasChanged(); }
+    }
+
+    private static string RenderStars(int filled) =>
+        new string('★', Math.Clamp(filled, 0, 5)) + new string('☆', Math.Clamp(5 - filled, 0, 5));
+
+    private static string FormatRelative(DateTime utc)
+    {
+        var diff = DateTime.UtcNow - utc;
+        if (diff.TotalSeconds < 60) return "الآن";
+        if (diff.TotalMinutes < 60) return $"منذ {(int)diff.TotalMinutes} د";
+        if (diff.TotalHours < 24) return $"منذ {(int)diff.TotalHours} س";
+        if (diff.TotalDays < 30) return $"منذ {(int)diff.TotalDays} يوم";
+        return utc.ToLocalTime().ToString("yyyy/MM/dd");
+    }
+}

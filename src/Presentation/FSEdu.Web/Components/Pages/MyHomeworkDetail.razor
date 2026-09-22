@@ -1,0 +1,224 @@
+@page "/my/homework/{HomeworkId:guid}"
+@using FSEdu.Shared.Contracts.Courses
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject NavigationManager Nav
+@rendermode InteractiveServer
+
+<PageTitle>@(_hw?.Title ?? "الواجب") - FSEdu</PageTitle>
+
+<div class="hw-detail fs-container">
+    @if (!_loaded)
+    {
+        <div class="fs-loading"><span class="fs-spinner"></span></div>
+    }
+    else if (_hw is null)
+    {
+        <div class="fs-alert fs-alert-danger">تعذّر تحميل الواجب</div>
+        <a href="/my/homework" class="fs-btn fs-btn-ghost">← العودة للقائمة</a>
+    }
+    else
+    {
+        <a href="/my/homework" class="back-link">← العودة لكل الواجبات</a>
+
+        <div class="hw-head">
+            <small class="course-label">@_hw.CourseTitle</small>
+            <h1>@_hw.Title</h1>
+            <div class="meta-row">
+                <div class="meta-item">
+                    <span class="meta-lbl">آخر موعد</span>
+                    <strong class="@(_hw.Overdue ? "overdue" : "")">@_hw.DueDateUtc.ToLocalTime().ToString("yyyy/MM/dd HH:mm")</strong>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-lbl">الدرجة الكاملة</span>
+                    <strong>@_hw.MaxScore</strong>
+                </div>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrEmpty(_hw.Description))
+        {
+            <div class="hw-desc">@_hw.Description</div>
+        }
+
+        @if (!string.IsNullOrEmpty(_hw.AttachmentUrl))
+        {
+            <a href="@_hw.AttachmentUrl" target="_blank" class="attachment-link">📎 تحميل ملف الواجب</a>
+        }
+
+        @if (_hw.MySubmission is not null && _hw.MySubmission.GradedAtUtc is not null)
+        {
+            <div class="graded-card">
+                <h3>🎯 تم التصحيح</h3>
+                <div class="grade-big">
+                    <span class="grade-score">@_hw.MySubmission.Score / @_hw.MaxScore</span>
+                    <span class="grade-pct">@(((decimal)(_hw.MySubmission.Score ?? 0) / _hw.MaxScore * 100m).ToString("0.#"))%</span>
+                </div>
+                @if (!string.IsNullOrEmpty(_hw.MySubmission.FeedbackBody))
+                {
+                    <div class="feedback">
+                        <strong>تعليق المعلّم:</strong>
+                        <p>@_hw.MySubmission.FeedbackBody</p>
+                    </div>
+                }
+                <small class="fs-text-muted">صُحّح فى @_hw.MySubmission.GradedAtUtc?.ToLocalTime().ToString("yyyy/MM/dd HH:mm")</small>
+            </div>
+
+            <h3 class="sub-section">إجابتك المُسلَّمة</h3>
+            <div class="my-submission readonly">
+                @if (!string.IsNullOrEmpty(_hw.MySubmission.Body))
+                {
+                    <div class="sub-body">@_hw.MySubmission.Body</div>
+                }
+                @if (!string.IsNullOrEmpty(_hw.MySubmission.AttachmentUrl))
+                {
+                    <a href="@_hw.MySubmission.AttachmentUrl" target="_blank" class="attachment-link">📎 الملف الذى رفعته</a>
+                }
+                @if (_hw.MySubmission.Late)
+                {
+                    <small class="late-note">⏰ تم التسليم بعد آخر موعد</small>
+                }
+            </div>
+        }
+        else
+        {
+            <h3 class="sub-section">@(_hw.MySubmission is null ? "إجابتك" : "تعديل إجابتك")</h3>
+            <div class="submit-form">
+                <label>الإجابة النصّية (اختيارى)</label>
+                <textarea class="fs-input" rows="6" @bind="_body"
+                          placeholder="اكتب إجابتك هنا..."></textarea>
+
+                <label>رابط مرفق (صورة، PDF، إلخ)</label>
+                <input class="fs-input" placeholder="https://..." @bind="_attachmentUrl" />
+
+                @if (!string.IsNullOrEmpty(_submitError))
+                {
+                    <div class="fs-alert fs-alert-danger">@_submitError</div>
+                }
+                @if (_submitSuccess)
+                {
+                    <div class="fs-alert fs-alert-success">تم التسليم بنجاح! 🎉</div>
+                }
+
+                <div class="form-actions">
+                    <button class="fs-btn fs-btn-primary" @onclick="Submit" disabled="@_busy">
+                        @if (_busy) { <span class="fs-spinner"></span> }
+                        else if (_hw.MySubmission is null) { <text>تسليم الواجب</text> }
+                        else { <text>تحديث الإجابة</text> }
+                    </button>
+                    @if (_hw.Overdue)
+                    {
+                        <small class="overdue-note">⏰ آخر موعد التسليم انتهى — التسليم سيُحسب متأخّرًا</small>
+                    }
+                </div>
+            </div>
+        }
+    }
+</div>
+
+<style>
+    .hw-detail { min-height: calc(100vh - 72px); padding: var(--fs-s-6) 0; max-width: 800px; }
+    .back-link { color: var(--fs-primary); text-decoration: none; font-size: 14px; }
+    .back-link:hover { text-decoration: underline; }
+
+    .hw-head { margin: var(--fs-s-4) 0 var(--fs-s-5); }
+    .course-label { color: var(--fs-text-muted); font-weight: 600; font-size: 14px; }
+    .hw-head h1 { margin: 4px 0 var(--fs-s-3); font-size: 26px; }
+    .meta-row { display: flex; gap: var(--fs-s-6); padding-top: var(--fs-s-3); border-top: 1px solid var(--fs-border); flex-wrap: wrap; }
+    .meta-item { display: flex; flex-direction: column; }
+    .meta-lbl { font-size: 12px; color: var(--fs-text-muted); }
+    .meta-item strong { font-size: 16px; }
+    .meta-item strong.overdue { color: #DC2626; }
+
+    .hw-desc {
+        background: white; border: 1px solid var(--fs-border);
+        border-radius: var(--fs-r-lg); padding: var(--fs-s-4);
+        white-space: pre-wrap; line-height: 1.7;
+        margin-bottom: var(--fs-s-4);
+    }
+
+    .attachment-link {
+        display: inline-block; padding: 10px 18px;
+        background: var(--fs-primary-soft); color: var(--fs-primary);
+        border-radius: var(--fs-r-md); font-weight: 700; text-decoration: none;
+        margin-bottom: var(--fs-s-4);
+    }
+
+    .graded-card {
+        background: linear-gradient(135deg, #F0FDF4, white);
+        border: 2px solid #16A34A; border-radius: var(--fs-r-xl);
+        padding: var(--fs-s-5); margin-bottom: var(--fs-s-5);
+    }
+    .graded-card h3 { margin: 0 0 var(--fs-s-3); color: #15803D; }
+    .grade-big { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: var(--fs-s-4); }
+    .grade-score { font-size: 36px; font-weight: 800; color: #15803D; }
+    .grade-pct { font-size: 24px; font-weight: 700; color: var(--fs-text-muted); }
+    .feedback { background: white; padding: var(--fs-s-3); border-radius: var(--fs-r-md); margin-bottom: var(--fs-s-3); }
+    .feedback p { margin: 4px 0 0; line-height: 1.6; }
+
+    .sub-section { margin: var(--fs-s-5) 0 var(--fs-s-3); }
+    .my-submission.readonly {
+        background: var(--fs-bg); border: 1px solid var(--fs-border);
+        border-radius: var(--fs-r-lg); padding: var(--fs-s-4);
+    }
+    .sub-body { white-space: pre-wrap; line-height: 1.7; margin-bottom: var(--fs-s-3); }
+    .late-note { display: block; color: #BE123C; font-weight: 700; margin-top: var(--fs-s-2); }
+
+    .submit-form {
+        background: white; border: 1px solid var(--fs-border);
+        border-radius: var(--fs-r-xl); padding: var(--fs-s-5);
+        display: flex; flex-direction: column; gap: var(--fs-s-3);
+    }
+    .submit-form label { font-size: 14px; font-weight: 600; }
+    .form-actions { display: flex; gap: var(--fs-s-3); align-items: center; flex-wrap: wrap; }
+    .overdue-note { color: #BE123C; }
+</style>
+
+@code {
+    [Parameter] public Guid HomeworkId { get; set; }
+
+    private StudentHomeworkDetailDto? _hw;
+    private bool _loaded;
+    private bool _busy;
+    private string _body = "";
+    private string _attachmentUrl = "";
+    private string? _submitError;
+    private bool _submitSuccess;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        await Auth.RestoreAsync();
+        if (!Auth.IsInRole("Student")) { Nav.NavigateTo("/login"); return; }
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        _hw = await Api.GetMyHomeworkDetailAsync(HomeworkId);
+        if (_hw?.MySubmission is not null)
+        {
+            _body = _hw.MySubmission.Body ?? "";
+            _attachmentUrl = _hw.MySubmission.AttachmentUrl ?? "";
+        }
+        _loaded = true; StateHasChanged();
+    }
+
+    private async Task Submit()
+    {
+        _submitError = null; _submitSuccess = false;
+        if (string.IsNullOrWhiteSpace(_body) && string.IsNullOrWhiteSpace(_attachmentUrl))
+        { _submitError = "اكتب إجابة نصّية أو ارفع مرفقًا"; return; }
+        _busy = true; StateHasChanged();
+        try
+        {
+            var (ok, err) = await Api.SubmitMyHomeworkAsync(HomeworkId,
+                string.IsNullOrWhiteSpace(_body) ? null : _body.Trim(),
+                string.IsNullOrWhiteSpace(_attachmentUrl) ? null : _attachmentUrl.Trim());
+            if (!ok) { _submitError = err?.Message ?? "تعذّر التسليم"; return; }
+            _submitSuccess = true;
+            await Load();
+        }
+        finally { _busy = false; StateHasChanged(); }
+    }
+}

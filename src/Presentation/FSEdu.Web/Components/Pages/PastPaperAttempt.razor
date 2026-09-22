@@ -1,0 +1,234 @@
+@page "/past-papers/{PaperId:guid}/start"
+@using FSEdu.Shared.Contracts.Assessments
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject NavigationManager Nav
+@implements IDisposable
+@rendermode InteractiveServer
+
+<PageTitle>@(_attempt?.Title ?? "امتحان") - FSEdu</PageTitle>
+
+@if (!_started)
+{
+    <div class="pp-wait fs-container">
+        @if (_loadError is not null)
+        {
+            <div class="fs-alert fs-alert-danger">@_loadError</div>
+            <a href="/past-papers" class="fs-btn fs-btn-ghost">← العودة للقائمة</a>
+        }
+        else
+        {
+            <div class="fs-loading"><span class="fs-spinner"></span><span>جارٍ بدء الامتحان...</span></div>
+        }
+    </div>
+}
+else
+{
+    <div class="pp-attempt">
+        <div class="pp-bar">
+            <div class="pp-bar-inner fs-container">
+                <div class="pp-title">
+                    <h1>@_attempt!.Title</h1>
+                    <small>@_answeredCount من @_attempt.Questions.Length إجابة</small>
+                </div>
+                <div class="pp-timer @(_timeWarning ? "warn" : "")" title="الوقت المتبقّى">
+                    ⏱ @FormatTime(_remainingSeconds)
+                </div>
+                <button class="fs-btn fs-btn-primary" @onclick="OnFinish" disabled="@_submitting">
+                    @if (_submitting) { <span class="fs-spinner"></span> }
+                    else { <text>تسليم الامتحان</text> }
+                </button>
+            </div>
+        </div>
+
+        <div class="fs-container pp-body">
+            @for (int i = 0; i < _attempt.Questions.Length; i++)
+            {
+                var q = _attempt.Questions[i];
+                var idx = i;
+                <div class="q-card">
+                    <div class="q-head">
+                        <span class="q-num">@(idx + 1)</span>
+                        <div class="q-body">
+                            <div class="q-text">@q.Body</div>
+                            <small class="q-marks">@q.Marks درجة</small>
+                        </div>
+                    </div>
+                    @if (q.Type == "MultipleChoice" && q.Options is not null)
+                    {
+                        <div class="q-options">
+                            @foreach (var opt in q.Options)
+                            {
+                                <label class="q-option @(_answers.GetValueOrDefault(q.Id) == opt ? "selected" : "")">
+                                    <input type="radio" name="@($"q-{q.Id}")"
+                                           checked="@(_answers.GetValueOrDefault(q.Id) == opt)"
+                                           @onchange="@(() => SetAnswer(q.Id, opt))" />
+                                    <span>@opt</span>
+                                </label>
+                            }
+                        </div>
+                    }
+                    else if (q.Type == "TrueFalse")
+                    {
+                        <div class="q-options">
+                            <label class="q-option @(_answers.GetValueOrDefault(q.Id) == "true" ? "selected" : "")">
+                                <input type="radio" name="@($"q-{q.Id}")"
+                                       checked="@(_answers.GetValueOrDefault(q.Id) == "true")"
+                                       @onchange="@(() => SetAnswer(q.Id, "true"))" />
+                                <span>صحيح ✓</span>
+                            </label>
+                            <label class="q-option @(_answers.GetValueOrDefault(q.Id) == "false" ? "selected" : "")">
+                                <input type="radio" name="@($"q-{q.Id}")"
+                                       checked="@(_answers.GetValueOrDefault(q.Id) == "false")"
+                                       @onchange="@(() => SetAnswer(q.Id, "false"))" />
+                                <span>خطأ ✗</span>
+                            </label>
+                        </div>
+                    }
+                    else
+                    {
+                        <input class="fs-input" placeholder="إجابتك..."
+                               value="@(_answers.GetValueOrDefault(q.Id))"
+                               @oninput="@((ChangeEventArgs e) => SetAnswer(q.Id, e.Value?.ToString() ?? ""))" />
+                    }
+                </div>
+            }
+        </div>
+    </div>
+}
+
+<style>
+    .pp-wait { padding: var(--fs-s-12) 0; }
+    .pp-attempt { min-height: 100vh; background: var(--fs-bg); padding-bottom: var(--fs-s-12); }
+
+    .pp-bar {
+        position: sticky; top: 0; z-index: 100;
+        background: white; border-bottom: 1px solid var(--fs-border);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    }
+    .pp-bar-inner {
+        display: flex; align-items: center; gap: var(--fs-s-4);
+        padding: var(--fs-s-3) 0;
+    }
+    .pp-title { flex: 1; }
+    .pp-title h1 { margin: 0; font-size: 18px; }
+    .pp-title small { color: var(--fs-text-muted); font-size: 13px; }
+
+    .pp-timer {
+        font-family: var(--fs-font-mono, monospace);
+        font-size: 18px; font-weight: 800;
+        padding: 6px 14px; border-radius: var(--fs-r-md);
+        background: var(--fs-primary-soft); color: var(--fs-primary);
+    }
+    .pp-timer.warn {
+        background: #FEE2E2; color: #DC2626;
+        animation: pulse-warn 1s ease-in-out infinite;
+    }
+    @@keyframes pulse-warn { 50% { opacity: 0.65; } }
+
+    .pp-body { padding: var(--fs-s-6) 0; display: flex; flex-direction: column; gap: var(--fs-s-4); }
+
+    .q-card {
+        background: white; border: 1px solid var(--fs-border);
+        border-radius: var(--fs-r-lg); padding: var(--fs-s-5);
+    }
+    .q-head { display: flex; gap: var(--fs-s-3); align-items: flex-start; margin-bottom: var(--fs-s-4); }
+    .q-num {
+        flex-shrink: 0;
+        width: 36px; height: 36px; border-radius: 50%;
+        background: var(--fs-primary); color: white;
+        display: flex; align-items: center; justify-content: center;
+        font-weight: 800;
+    }
+    .q-body { flex: 1; }
+    .q-text { font-size: 16px; line-height: 1.6; margin-bottom: 4px; }
+    .q-marks { color: var(--fs-text-muted); font-size: 12px; }
+
+    .q-options { display: flex; flex-direction: column; gap: var(--fs-s-2); }
+    .q-option {
+        display: flex; align-items: center; gap: var(--fs-s-3);
+        padding: var(--fs-s-3); border-radius: var(--fs-r-md);
+        background: var(--fs-bg); cursor: pointer;
+        transition: all var(--fs-trans);
+        border: 2px solid transparent;
+    }
+    .q-option:hover { background: var(--fs-primary-soft); }
+    .q-option.selected { background: var(--fs-primary-soft); border-color: var(--fs-primary); }
+    .q-option input { accent-color: var(--fs-primary); }
+</style>
+
+@code {
+    [Parameter] public Guid PaperId { get; set; }
+
+    private StartPastPaperAttemptResponse? _attempt;
+    private PastPaperAttemptResultDto? _result;
+    private bool _started;
+    private bool _submitting;
+    private string? _loadError;
+    private readonly Dictionary<Guid, string> _answers = new();
+    private int _remainingSeconds;
+    private bool _timeWarning;
+    private System.Threading.Timer? _timer;
+
+    private int _answeredCount => _answers.Values.Count(v => !string.IsNullOrWhiteSpace(v));
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        await Auth.RestoreAsync();
+        if (!Auth.IsAuthenticated) { Nav.NavigateTo("/login"); return; }
+
+        var (data, err) = await Api.StartPastPaperAttemptAsync(PaperId);
+        if (err is not null) { _loadError = err.Message; StateHasChanged(); return; }
+        if (data is null) { _loadError = "تعذّر بدء الامتحان"; StateHasChanged(); return; }
+
+        _attempt = data;
+        _remainingSeconds = data.DurationMinutes * 60;
+        _started = true;
+        _timer = new System.Threading.Timer(_ => InvokeAsync(Tick), null, 1000, 1000);
+        StateHasChanged();
+    }
+
+    private async Task Tick()
+    {
+        if (_attempt is null) return;
+        _remainingSeconds--;
+        _timeWarning = _remainingSeconds < 300 && _remainingSeconds > 0;
+        if (_remainingSeconds <= 0)
+        {
+            _timer?.Dispose(); _timer = null;
+            await OnFinish();
+            return;
+        }
+        StateHasChanged();
+    }
+
+    private void SetAnswer(Guid questionId, string value) => _answers[questionId] = value;
+
+    private async Task OnFinish()
+    {
+        if (_attempt is null || _submitting) return;
+        _submitting = true; StateHasChanged();
+        try
+        {
+            _timer?.Dispose(); _timer = null;
+            var answers = _answers.Select(kv => new PastPaperAnswerDto(kv.Key, kv.Value)).ToArray();
+            var (data, err) = await Api.SubmitPastPaperAttemptAsync(
+                new SubmitPastPaperAttemptRequest(_attempt.AttemptId, answers));
+            if (err is not null) { _loadError = err.Message; _started = false; StateHasChanged(); return; }
+            _result = data;
+            Nav.NavigateTo($"/past-papers/attempts/{_attempt.AttemptId}");
+        }
+        finally { _submitting = false; }
+    }
+
+    private static string FormatTime(int seconds)
+    {
+        if (seconds < 0) seconds = 0;
+        var m = seconds / 60;
+        var s = seconds % 60;
+        return $"{m:D2}:{s:D2}";
+    }
+
+    public void Dispose() => _timer?.Dispose();
+}

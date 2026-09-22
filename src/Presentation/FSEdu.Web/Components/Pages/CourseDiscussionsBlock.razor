@@ -1,0 +1,158 @@
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+
+@if (_data is null)
+{
+    <div class="fs-center" style="padding:24px"><span class="fs-spinner"></span></div>
+}
+else
+{
+    <div class="dx-wrap">
+        @if (_data.CanPost)
+        {
+            <div class="dx-composer fs-card">
+                @if (!_showForm)
+                {
+                    <button class="fs-btn fs-btn-primary" @onclick="() => _showForm = true">
+                        💬 ابدأ نقاشًا جديدًا
+                    </button>
+                }
+                else
+                {
+                    <h4>نقاش جديد</h4>
+                    <input type="text" class="dx-input" placeholder="عنوان النقاش"
+                           maxlength="255" @bind="_newTitle" @bind:event="oninput" />
+                    <textarea class="dx-input" rows="4" maxlength="4000"
+                              placeholder="ما الذي تريد مناقشته؟"
+                              @bind="_newBody" @bind:event="oninput"></textarea>
+                    @if (!string.IsNullOrEmpty(_error))
+                    {
+                        <div class="fs-alert fs-alert-error">@_error</div>
+                    }
+                    <div class="dx-actions">
+                        <button class="fs-btn fs-btn-primary" @onclick="Submit" disabled="@_busy">
+                            @(_busy ? "جارٍ النشر..." : "نشر")
+                        </button>
+                        <button class="fs-btn fs-btn-outline" @onclick="CancelForm" disabled="@_busy">إلغاء</button>
+                    </div>
+                }
+            </div>
+        }
+
+        @if (_data.Items.Count == 0)
+        {
+            <p class="fs-text-muted dx-empty">لا توجد نقاشات بعد. كن أوّل من يفتح نقاشًا!</p>
+        }
+        else
+        {
+            <div class="dx-list">
+                @foreach (var d in _data.Items)
+                {
+                    <a class="dx-row @(d.Pinned ? "pinned" : "") @(d.Locked ? "locked" : "")"
+                       href="/courses/discussions/@d.Id">
+                        <div class="dx-row-head">
+                            @if (d.Pinned) { <span class="dx-tag pin">📌</span> }
+                            @if (d.Locked) { <span class="dx-tag lock">🔒</span> }
+                            <strong>@d.Title</strong>
+                        </div>
+                        <small class="dx-row-meta">@d.AuthorName · @FormatTime(d.CreatedAtUtc)</small>
+                        <p class="dx-row-excerpt">@d.BodyExcerpt</p>
+                        <div class="dx-row-footer">
+                            <span>💬 @d.RepliesCount ردّ</span>
+                            <span class="fs-text-muted">آخر نشاط @FormatTime(d.LastActivityAtUtc)</span>
+                        </div>
+                    </a>
+                }
+            </div>
+        }
+    </div>
+}
+
+<style>
+    .dx-wrap { display: flex; flex-direction: column; gap: var(--fs-s-3); }
+    .dx-composer { padding: var(--fs-s-4); display: flex; flex-direction: column; gap: var(--fs-s-2); }
+    .dx-composer h4 { margin: 0 0 var(--fs-s-2); }
+    .dx-input { width: 100%; padding: var(--fs-s-3); border: 1px solid var(--fs-border); border-radius: var(--fs-r-md); font-family: inherit; font-size: 14px; }
+    .dx-input:focus { outline: none; border-color: var(--fs-primary); }
+    .dx-actions { display: flex; gap: var(--fs-s-2); }
+
+    .dx-empty { text-align: center; padding: var(--fs-s-4); }
+    .dx-list { display: flex; flex-direction: column; gap: var(--fs-s-2); }
+    .dx-row {
+        display: block; padding: var(--fs-s-4);
+        background: var(--fs-surface); border: 1px solid var(--fs-border);
+        border-radius: var(--fs-r-md); text-decoration: none; color: inherit;
+        border-right: 4px solid var(--fs-border);
+        transition: all var(--fs-trans);
+    }
+    .dx-row:hover { border-color: var(--fs-primary); transform: translateX(-2px); }
+    .dx-row.pinned { border-right-color: var(--fs-primary); background: linear-gradient(180deg, var(--fs-primary-soft), var(--fs-surface)); }
+    .dx-row.locked { opacity: 0.85; }
+    .dx-row-head { display: flex; align-items: center; gap: var(--fs-s-2); margin-bottom: 2px; }
+    .dx-row-head strong { font-size: 16px; }
+    .dx-tag { font-size: 14px; }
+    .dx-tag.pin { color: var(--fs-primary); }
+    .dx-row-meta { display: block; font-size: 12px; color: var(--fs-text-muted); margin-bottom: var(--fs-s-2); }
+    .dx-row-excerpt { font-size: 13px; line-height: 1.6; color: var(--fs-text); margin: 0 0 var(--fs-s-2); white-space: pre-wrap; }
+    .dx-row-footer { display: flex; justify-content: space-between; font-size: 12px; }
+</style>
+
+@code {
+    [Parameter] public Guid CourseId { get; set; }
+
+    private FSEdu.Shared.Contracts.Courses.DiscussionsResponse? _data;
+    private bool _showForm;
+    private string _newTitle = "";
+    private string _newBody = "";
+    private bool _busy;
+    private string? _error;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            await Load();
+        }
+    }
+
+    private async Task Load()
+    {
+        _data = await Api.GetCourseDiscussionsAsync(CourseId);
+        StateHasChanged();
+    }
+
+    private void CancelForm()
+    {
+        _showForm = false;
+        _newTitle = ""; _newBody = ""; _error = null;
+    }
+
+    private async Task Submit()
+    {
+        _error = null;
+        if (_newTitle.Trim().Length < 3) { _error = "العنوان قصير جدًا"; return; }
+        if (_newBody.Trim().Length < 5) { _error = "النص قصير جدًا"; return; }
+
+        _busy = true; StateHasChanged();
+        try
+        {
+            var (id, err) = await Api.CreateDiscussionAsync(CourseId, _newTitle.Trim(), _newBody.Trim());
+            if (err is not null) { _error = err.Message ?? "تعذّر النشر"; return; }
+            CancelForm();
+            await Load();
+        }
+        finally { _busy = false; StateHasChanged(); }
+    }
+
+    private static string FormatTime(DateTime utc)
+    {
+        var local = utc.ToLocalTime();
+        var diff = DateTime.Now - local;
+        if (diff.TotalMinutes < 1) return "الآن";
+        if (diff.TotalMinutes < 60) return $"منذ {(int)diff.TotalMinutes} د";
+        if (diff.TotalHours < 24) return $"منذ {(int)diff.TotalHours} س";
+        if (diff.TotalDays < 7) return $"منذ {(int)diff.TotalDays} يوم";
+        return local.ToString("yyyy/MM/dd");
+    }
+}

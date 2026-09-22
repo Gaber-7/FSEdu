@@ -1,0 +1,69 @@
+@inherits LayoutComponentBase
+
+<div class="fs-layout">
+    <header class="fs-navbar">
+        <div class="fs-container fs-navbar-inner">
+            <a href="/" class="fs-logo">
+                <span class="fs-logo-mark">FS</span>
+                <span class="fs-logo-text">Edu</span>
+            </a>
+
+            <nav class="fs-nav-links">
+                <a href="/">الرئيسية</a>
+                <a href="/courses">الدورات</a>
+                <a href="/pricing">الأسعار</a>
+                <a href="/about">من نحن</a>
+            </nav>
+
+            <div class="fs-nav-actions">
+                <NotificationBell />
+                <UserMenu />
+            </div>
+        </div>
+    </header>
+
+    <main class="fs-main">
+        @Body
+    </main>
+
+    <footer class="fs-footer">
+        <div class="fs-container">
+            <div class="fs-footer-grid">
+                <div>
+                    <div class="fs-logo">
+                        <span class="fs-logo-mark">FS</span>
+                        <span class="fs-logo-text">Edu</span>
+                    </div>
+                    <p class="fs-text-muted">منصة تعليمية ذكية للمراحل الابتدائية والإعدادية</p>
+                </div>
+                <div>
+                    <h4>المنصة</h4>
+                    <a href="/about">من نحن</a>
+                    <a href="/pricing">الأسعار</a>
+                    <a href="/contact">اتصل بنا</a>
+                </div>
+                <div>
+                    <h4>المستخدمون</h4>
+                    <a href="/register">للطلاب</a>
+                    <a href="/register/parent">لأولياء الأمور</a>
+                    <a href="/register/teacher">للمدرسين</a>
+                </div>
+                <div>
+                    <h4>الدعم</h4>
+                    <a href="/faq">الأسئلة الشائعة</a>
+                    <a href="/terms">الشروط</a>
+                    <a href="/privacy">الخصوصية</a>
+                </div>
+            </div>
+            <div class="fs-footer-bottom">
+                <span>© 2026 FSEdu — جميع الحقوق محفوظة</span>
+            </div>
+        </div>
+    </footer>
+</div>
+
+<div id="blazor-error-ui">
+    حدث خطأ ما.
+    <a href="" class="reload">إعادة تحميل</a>
+    <a class="dismiss">✖</a>
+</div>

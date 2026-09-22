@@ -1,0 +1,9 @@
+# SQL Server Database Files — local dev only
+*.mdf
+*.ldf
+*.bak
+*.log
+
+# Keep the folder itself
+!.gitignore
+!README.md

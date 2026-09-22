@@ -1,0 +1,260 @@
+@page "/past-papers"
+@using FSEdu.Shared.Contracts.Assessments
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject NavigationManager Nav
+@rendermode InteractiveServer
+
+<PageTitle>الامتحانات السابقة - FSEdu</PageTitle>
+
+<div class="pp-page fs-container">
+    <div class="page-head">
+        <h1>📚 الامتحانات السابقة</h1>
+        <p class="fs-text-muted">حلّ امتحانات السنوات السابقة لتستعدّ لامتحاناتك القادمة. تصحيح فورى مع نموذج إجابة وشرح.</p>
+    </div>
+
+    @if (!_loaded)
+    {
+        <div class="fs-loading"><span class="fs-spinner"></span></div>
+    }
+    else
+    {
+        <div class="filters">
+            <div class="filter-group">
+                <label>المرحلة</label>
+                <select class="fs-input" @bind="_stageId" @bind:after="ReloadList">
+                    <option value="0">— كل المراحل —</option>
+                    @if (_filters is not null)
+                    {
+                        @foreach (var s in _filters.Stages)
+                        {
+                            <option value="@s.Id">@s.Name</option>
+                        }
+                    }
+                </select>
+            </div>
+
+            <div class="filter-group">
+                <label>المادة</label>
+                <select class="fs-input" @bind="_subjectId" @bind:after="ReloadList">
+                    <option value="0">— كل المواد —</option>
+                    @if (_filters is not null)
+                    {
+                        @foreach (var s in _filters.Subjects)
+                        {
+                            <option value="@s.Id">@s.Name</option>
+                        }
+                    }
+                </select>
+            </div>
+
+            <div class="filter-group">
+                <label>السنة</label>
+                <select class="fs-input" @bind="_year" @bind:after="ReloadList">
+                    <option value="0">— كل السنوات —</option>
+                    @if (_filters is not null)
+                    {
+                        @foreach (var y in _filters.Years)
+                        {
+                            <option value="@y">@y</option>
+                        }
+                    }
+                </select>
+            </div>
+
+            <div class="filter-group">
+                <label>الترم</label>
+                <select class="fs-input" @bind="_term" @bind:after="ReloadList">
+                    <option value="">— كل الترمات —</option>
+                    @if (_filters is not null)
+                    {
+                        @foreach (var t in _filters.Terms)
+                        {
+                            <option value="@t">@TermLabel(t)</option>
+                        }
+                    }
+                </select>
+            </div>
+
+            <div class="filter-group">
+                <label>نوع الامتحان</label>
+                <select class="fs-input" @bind="_examType" @bind:after="ReloadList">
+                    <option value="">— الكل —</option>
+                    @if (_filters is not null)
+                    {
+                        @foreach (var t in _filters.ExamTypes)
+                        {
+                            <option value="@t">@ExamTypeLabel(t)</option>
+                        }
+                    }
+                </select>
+            </div>
+        </div>
+
+        @if (_papers.Count == 0)
+        {
+            <div class="empty">
+                <div class="empty-icon">📭</div>
+                <h3>لا توجد امتحانات مطابقة</h3>
+                <p>جرّب تغيير الفلاتر، أو عُد لاحقًا — يتمّ إضافة امتحانات جديدة باستمرار.</p>
+            </div>
+        }
+        else
+        {
+            <div class="papers-grid">
+                @foreach (var p in _papers)
+                {
+                    <div class="paper-card" style="--accent: @(p.SubjectColor ?? "#6366f1")">
+                        <div class="paper-head">
+                            <span class="subject-chip">@p.SubjectName</span>
+                            <span class="year-chip">@p.Year</span>
+                        </div>
+                        <h3>@p.Title</h3>
+                        <div class="paper-meta">
+                            <span>📍 @p.StageName</span>
+                            <span>📋 @TermLabel(p.Term)</span>
+                            <span>🏷️ @ExamTypeLabel(p.ExamType)</span>
+                        </div>
+                        @if (!string.IsNullOrEmpty(p.EducationalAdministration))
+                        {
+                            <small class="fs-text-muted">@p.EducationalAdministration</small>
+                        }
+                        <div class="paper-stats">
+                            <div><strong>@p.QuestionCount</strong><span>سؤال</span></div>
+                            <div><strong>@p.DurationMinutes</strong><span>دقيقة</span></div>
+                            <div><strong>@p.TotalMarks</strong><span>درجة</span></div>
+                        </div>
+                        @if (p.MyBestScore.HasValue)
+                        {
+                            var pct = p.TotalMarks > 0 ? (int)(p.MyBestScore.Value / p.TotalMarks * 100m) : 0;
+                            <div class="my-best">
+                                <span>🎯 أعلى نتيجة لك</span>
+                                <strong>@p.MyBestScore.Value / @p.TotalMarks (@pct%)</strong>
+                            </div>
+                        }
+                        <a href="@($"/past-papers/{p.Id}/start")" class="fs-btn fs-btn-primary fs-btn-block">
+                            @(p.MyBestScore.HasValue ? "إعادة المحاولة ←" : "ابدأ الحلّ ←")
+                        </a>
+                    </div>
+                }
+            </div>
+        }
+    }
+</div>
+
+<style>
+    .pp-page { min-height: calc(100vh - 72px); padding: var(--fs-s-8) 0; }
+    .page-head { margin-bottom: var(--fs-s-6); }
+    .page-head h1 { margin: 0 0 var(--fs-s-2); }
+
+    .filters {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: var(--fs-s-3);
+        background: white; border: 1px solid var(--fs-border);
+        border-radius: var(--fs-r-lg); padding: var(--fs-s-4);
+        margin-bottom: var(--fs-s-5);
+    }
+    .filter-group label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--fs-text-muted); }
+
+    .empty {
+        text-align: center; padding: var(--fs-s-12) var(--fs-s-4);
+        background: white; border-radius: var(--fs-r-xl);
+        border: 1px solid var(--fs-border);
+    }
+    .empty-icon { font-size: 64px; margin-bottom: var(--fs-s-3); }
+    .empty h3 { margin: 0 0 var(--fs-s-2); }
+
+    .papers-grid {
+        display: grid; gap: var(--fs-s-5);
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    }
+    .paper-card {
+        background: white; border: 1px solid var(--fs-border);
+        border-top: 4px solid var(--accent);
+        border-radius: var(--fs-r-xl); padding: var(--fs-s-5);
+        display: flex; flex-direction: column; gap: var(--fs-s-3);
+        transition: all var(--fs-trans);
+    }
+    .paper-card:hover { transform: translateY(-3px); box-shadow: 0 12px 28px rgba(0,0,0,0.1); }
+    .paper-head { display: flex; justify-content: space-between; align-items: center; }
+    .subject-chip {
+        padding: 3px 10px; border-radius: var(--fs-r-full);
+        background: color-mix(in srgb, var(--accent) 15%, white);
+        color: var(--accent); font-weight: 700; font-size: 12px;
+    }
+    .year-chip {
+        padding: 3px 10px; border-radius: var(--fs-r-full);
+        background: var(--fs-bg); color: var(--fs-text-muted);
+        font-weight: 700; font-size: 12px;
+    }
+    .paper-card h3 { margin: 0; font-size: 16px; line-height: 1.4; }
+    .paper-meta { display: flex; flex-wrap: wrap; gap: var(--fs-s-3); font-size: 13px; color: var(--fs-text-muted); }
+    .paper-stats {
+        display: grid; grid-template-columns: repeat(3, 1fr);
+        gap: var(--fs-s-2); padding: var(--fs-s-3) 0;
+        border-top: 1px solid var(--fs-border);
+        border-bottom: 1px solid var(--fs-border);
+    }
+    .paper-stats > div { display: flex; flex-direction: column; align-items: center; }
+    .paper-stats strong { font-size: 18px; color: var(--accent); }
+    .paper-stats span { font-size: 11px; color: var(--fs-text-muted); }
+    .my-best {
+        display: flex; justify-content: space-between; align-items: center;
+        background: var(--fs-primary-soft); color: var(--fs-primary);
+        padding: 8px 12px; border-radius: var(--fs-r-md);
+        font-size: 13px;
+    }
+</style>
+
+@code {
+    private List<PastPaperListItemDto> _papers = new();
+    private PastPaperBrowseFiltersDto? _filters;
+    private bool _loaded;
+    private int _stageId, _subjectId, _year;
+    private string _term = "";
+    private string _examType = "";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            if (!Auth.IsAuthenticated) { Nav.NavigateTo("/login"); return; }
+            _filters = await Api.GetPastPaperFiltersAsync();
+            _papers = await Api.BrowsePastPapersAsync();
+            _loaded = true;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ReloadList()
+    {
+        _papers = await Api.BrowsePastPapersAsync(
+            subjectId: _subjectId == 0 ? null : _subjectId,
+            stageId: _stageId == 0 ? null : _stageId,
+            year: _year == 0 ? null : _year,
+            term: string.IsNullOrEmpty(_term) ? null : _term,
+            examType: string.IsNullOrEmpty(_examType) ? null : _examType);
+        StateHasChanged();
+    }
+
+    private static string TermLabel(string t) => t switch
+    {
+        "FirstTerm" => "الترم الأول",
+        "SecondTerm" => "الترم الثانى",
+        "EndOfYear" => "نهاية العام",
+        "MidTerm" => "نصف العام",
+        _ => t
+    };
+
+    private static string ExamTypeLabel(string t) => t switch
+    {
+        "School" => "مدرسة",
+        "Administration" => "إدارة تعليمية",
+        "Governorate" => "محافظة",
+        "National" => "شهادة عامة",
+        "Ministry" => "وزارة",
+        _ => t
+    };
+}

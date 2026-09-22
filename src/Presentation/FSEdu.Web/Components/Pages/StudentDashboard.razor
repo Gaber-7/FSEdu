@@ -1,0 +1,516 @@
+@page "/dashboard/student"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+
+<PageTitle>لوحة الطالب — FSEdu</PageTitle>
+
+<div class="dashboard">
+    <div class="fs-container">
+        @if (!_loaded)
+        {
+            <div class="fs-center" style="padding:80px"><span class="fs-spinner"></span></div>
+        }
+        else if (!Auth.IsAuthenticated)
+        {
+            <div class="fs-alert fs-alert-error">يجب تسجيل الدخول. <a href="/login">تسجيل الدخول</a></div>
+        }
+        else if (_data is null)
+        {
+            <div class="fs-alert fs-alert-error">تعذّر تحميل البيانات</div>
+        }
+        else
+        {
+            <div class="welcome-bar">
+                <div>
+                    <h1>👋 أهلاً @_data.FullName</h1>
+                    <p class="fs-text-muted">@_data.StageName — رحلتك التعليمية بانتظارك</p>
+                </div>
+                @if (_data.CurrentStreakDays > 0)
+                {
+                    <span class="fs-badge fs-badge-accent">🔥 @_data.CurrentStreakDays يوم متواصل</span>
+                }
+                else
+                {
+                    <span class="fs-badge">🌱 ابدأ أول يوم تعلّم</span>
+                }
+            </div>
+
+            @if (_data.ActiveBundleSubscription is null && _data.IndividualSubjectSubscriptionsCount == 0)
+            {
+                <div class="fs-alert fs-alert-info" style="margin-bottom:var(--fs-s-6)">
+                    <span>💡</span>
+                    <div>
+                        <strong>ابدأ رحلتك — اشترك الآن</strong>
+                        <p style="margin:4px 0 var(--fs-s-2) 0; font-size:14px">
+                            لم يتم تفعيل أي اشتراك بعد. اشترك للوصول للدورات والحصص.
+                        </p>
+                        <a href="/pricing" class="fs-btn fs-btn-primary fs-btn-sm">استعرض الباقات ←</a>
+                    </div>
+                </div>
+            }
+
+            <div style="margin-bottom:var(--fs-s-5)">
+                <FSEdu.Web.Components.Shared.DailyChallengeWidget />
+            </div>
+
+            <div class="fs-grid fs-grid-4 kpi-row">
+                <div class="fs-card kpi-card">
+                    <span class="kpi-icon" style="background:var(--fs-primary-soft);color:var(--fs-primary)">📚</span>
+                    <div>
+                        <strong class="kpi-value">@_data.AccessibleCoursesCount</strong>
+                        <span class="kpi-label">دورة متاحة</span>
+                    </div>
+                </div>
+                <div class="fs-card kpi-card">
+                    <span class="kpi-icon" style="background:var(--fs-secondary-soft);color:var(--fs-secondary)">🎥</span>
+                    <div>
+                        <strong class="kpi-value">@_data.AccessibleLessonsCount</strong>
+                        <span class="kpi-label">درس متاح</span>
+                    </div>
+                </div>
+                <div class="fs-card kpi-card">
+                    <span class="kpi-icon" style="background:var(--fs-accent-soft);color:#B56E00">⭐</span>
+                    <div>
+                        <strong class="kpi-value">@_data.XpPoints</strong>
+                        <span class="kpi-label">نقاط XP</span>
+                    </div>
+                </div>
+                <div class="fs-card kpi-card">
+                    <span class="kpi-icon" style="background:#E0FAF4;color:var(--fs-success)">🏆</span>
+                    <div>
+                        <strong class="kpi-value">@_data.LongestStreakDays</strong>
+                        <span class="kpi-label">أطول سلسلة أيام</span>
+                    </div>
+                </div>
+            </div>
+
+            @if (_suggestions is { Count: > 0 })
+            {
+                <div class="sug-section">
+                    <div class="sug-grid">
+                        @foreach (var s in _suggestions)
+                        {
+                            <article class="sug-card fs-card @SugClass(s.Kind)">
+                                <span class="sug-emoji">@s.Emoji</span>
+                                <div class="sug-body">
+                                    <strong>@s.Title</strong>
+                                    <p>@s.Body</p>
+                                    @if (!string.IsNullOrEmpty(s.ActionUrl) && !string.IsNullOrEmpty(s.ActionLabel))
+                                    {
+                                        <a href="@s.ActionUrl" class="fs-btn fs-btn-primary fs-btn-sm">@s.ActionLabel ←</a>
+                                    }
+                                </div>
+                            </article>
+                        }
+                    </div>
+                </div>
+            }
+
+            @if (_mission is not null)
+            {
+                <div class="dm-section fs-card @(_mission.AllDone ? "all-done" : "")">
+                    <div class="dm-head">
+                        <div>
+                            <h3>🎯 مهمّة اليوم</h3>
+                            <small class="fs-text-muted">
+                                أكملتَ @_mission.CompletedCount من @_mission.TotalCount
+                                @if (_mission.AllDone)
+                                {
+                                    <text> · 🔥 @_mission.CurrentStreakDays يوم متواصل</text>
+                                }
+                            </small>
+                        </div>
+                        <div class="dm-progress-circle @(_mission.AllDone ? "complete" : "")">
+                            <strong>@(_mission.AllDone ? "✓" : $"{_mission.CompletedCount}/{_mission.TotalCount}")</strong>
+                        </div>
+                    </div>
+                    <div class="dm-goals">
+                        @foreach (var g in _mission.Goals)
+                        {
+                            <div class="dm-goal @(g.Done ? "done" : "")">
+                                <span class="dm-goal-emoji">@g.Emoji</span>
+                                <div class="dm-goal-info">
+                                    <strong>@g.Title</strong>
+                                    <div class="dm-bar">
+                                        <div class="dm-bar-fill" style="width: @((int)(100.0 * g.Progress / Math.Max(1, g.Target)))%"></div>
+                                    </div>
+                                </div>
+                                <span class="dm-goal-count">@g.Progress / @g.Target</span>
+                                @if (g.Done) { <span class="dm-check">✓</span> }
+                            </div>
+                        }
+                    </div>
+                    @if (_mission.AllDone)
+                    {
+                        <div class="dm-celebrate">🎉 أتممت مهمّة اليوم! استمرّ في السلسلة غدًا للحفاظ عليها.</div>
+                    }
+                </div>
+            }
+
+            @if (_recs is { Count: > 0 })
+            {
+                <div class="rec-section fs-card">
+                    <div class="card-head">
+                        <h3>✨ مقترح لك</h3>
+                        <small class="fs-text-muted">دورات قد تعجبك في مرحلتك الدراسية</small>
+                    </div>
+                    <div class="rec-row">
+                        @foreach (var c in _recs)
+                        {
+                            <a class="rec-card" href="@($"/courses/{c.Id}")">
+                                <div class="rec-thumb">
+                                    @if (!string.IsNullOrEmpty(c.ThumbnailUrl))
+                                    {
+                                        <img src="@c.ThumbnailUrl" alt="@c.Title" />
+                                    }
+                                    else
+                                    {
+                                        <span class="rec-thumb-emoji">📖</span>
+                                    }
+                                </div>
+                                <div class="rec-info">
+                                    <strong>@c.Title</strong>
+                                    <small>@c.SubjectName</small>
+                                    <div class="rec-meta">
+                                        @if (c.RatingAvg > 0) { <span>⭐ @c.RatingAvg.ToString("0.0")</span> }
+                                        @if (c.EnrollmentCount > 0) { <span>👥 @c.EnrollmentCount</span> }
+                                        <span>@c.LessonsCount درس</span>
+                                    </div>
+                                </div>
+                            </a>
+                        }
+                    </div>
+                </div>
+            }
+
+            @if (_continue is { Count: > 0 })
+            {
+                <div class="cw-section fs-card">
+                    <div class="card-head">
+                        <h3>▶ تابع المشاهدة</h3>
+                        <small class="fs-text-muted">دروسك التي بدأتها ولم تنتهِ منها</small>
+                    </div>
+                    <div class="cw-row">
+                        @foreach (var item in _continue)
+                        {
+                            var pct = (int)Math.Round((double)item.WatchedPct);
+                            <a class="cw-card" href="@($"/lessons/{item.LessonId}/watch?resumeAt={item.LastPositionSec}")">
+                                <div class="cw-thumb">
+                                    @if (!string.IsNullOrEmpty(item.ThumbnailUrl))
+                                    {
+                                        <img src="@item.ThumbnailUrl" alt="@item.LessonTitle" />
+                                    }
+                                    else
+                                    {
+                                        <span class="cw-thumb-emoji">📺</span>
+                                    }
+                                    <span class="cw-play">▶</span>
+                                    <div class="cw-bar"><div class="cw-bar-fill" style="width:@(pct)%"></div></div>
+                                </div>
+                                <div class="cw-info">
+                                    <strong>@item.LessonTitle</strong>
+                                    <small>@item.CourseTitle · @item.SubjectName</small>
+                                    <small class="cw-pos">@FormatPos(item.LastPositionSec) / @FormatPos(item.DurationSeconds) · @pct%</small>
+                                </div>
+                            </a>
+                        }
+                    </div>
+                </div>
+            }
+
+            <div class="dashboard-grid">
+                <div class="fs-card">
+                    <div class="card-head">
+                        <h3>📚 دوراتك المتاحة</h3>
+                        <a href="/courses" class="fs-btn fs-btn-ghost fs-btn-sm">عرض الكل ←</a>
+                    </div>
+                    @if (_data.RecentCourses.Any())
+                    {
+                        <div class="courses-list">
+                            @foreach (var c in _data.RecentCourses)
+                            {
+                                <a href="/courses/@c.Id" class="course-item">
+                                    <span class="course-thumb-sm">📖</span>
+                                    <div class="course-info">
+                                        <strong>@c.Title</strong>
+                                        <small>@c.SubjectName · @c.LessonsCount درس</small>
+                                    </div>
+                                    <span class="course-go">←</span>
+                                </a>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="empty-state">
+                            <p class="fs-text-muted">لا توجد دورات متاحة بعد</p>
+                            <a href="/pricing" class="fs-btn fs-btn-primary fs-btn-sm">اشترك للوصول</a>
+                        </div>
+                    }
+                </div>
+
+                <div class="fs-card subscription-card">
+                    <div class="card-head"><h3>💳 اشتراكك الحالي</h3></div>
+                    @if (_data.ActiveBundleSubscription is not null)
+                    {
+                        var sub = _data.ActiveBundleSubscription;
+                        var remaining = (int)(sub.EndsAtUtc - DateTime.UtcNow).TotalDays;
+                        <div class="sub-details">
+                            <div class="sub-type">
+                                <span class="sub-icon">🎓</span>
+                                <div>
+                                    <strong>باقة شاملة</strong>
+                                    <small>جميع مواد مرحلتك</small>
+                                </div>
+                            </div>
+                            <div class="sub-stat">
+                                <span>ينتهي في</span>
+                                <strong>@sub.EndsAtUtc.ToString("yyyy/MM/dd")</strong>
+                            </div>
+                            <div class="sub-stat">
+                                <span>المتبقي</span>
+                                <strong>@remaining يوم</strong>
+                            </div>
+                        </div>
+                    }
+                    else if (_data.IndividualSubjectSubscriptionsCount > 0)
+                    {
+                        <div class="sub-details">
+                            <strong>@_data.IndividualSubjectSubscriptionsCount اشتراك فردي</strong>
+                            <a href="/student/subscriptions" class="fs-btn fs-btn-outline fs-btn-sm">عرض التفاصيل</a>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="empty-state">
+                            <p class="fs-text-muted">لا يوجد اشتراك نشط</p>
+                            <a href="/pricing" class="fs-btn fs-btn-primary fs-btn-sm">اشترك الآن</a>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <div class="fs-grid fs-grid-2">
+                <div class="fs-card">
+                    <div class="card-head"><h3>🎯 تحدي الأسبوع</h3></div>
+                    <div class="challenge-content">
+                        <h4>أكمل 5 دروس هذا الأسبوع</h4>
+                        <p class="fs-text-muted">اكسب <strong>100 XP</strong> + شارة "مواظب لأسبوع"</p>
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: 0%"></div>
+                        </div>
+                        <small>0 / 5 مكتمل</small>
+                    </div>
+                </div>
+
+                <div class="fs-card">
+                    <div class="card-head"><h3>📝 الواجبات</h3></div>
+                    <div class="empty-state">
+                        <p class="fs-text-muted">لا توجد واجبات حالية</p>
+                        <small class="fs-text-subtle">نظام الواجبات قريبًا</small>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .dashboard { padding: var(--fs-s-10) 0; min-height: calc(100vh - 72px); }
+    .welcome-bar { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: var(--fs-s-8); flex-wrap: wrap; gap: var(--fs-s-4); }
+    .welcome-bar h1 { font-size: 28px; margin-bottom: var(--fs-s-1); }
+    .kpi-row { margin-bottom: var(--fs-s-8); }
+    .kpi-card { display: flex; align-items: center; gap: var(--fs-s-4); }
+    .kpi-icon { width: 48px; height: 48px; border-radius: var(--fs-r-md); display: flex; align-items: center; justify-content: center; font-size: 24px; flex-shrink: 0; }
+    .kpi-value { display: block; font-size: 28px; font-weight: 800; line-height: 1; margin-bottom: 2px; color: var(--fs-primary); }
+    .kpi-label { font-size: 13px; color: var(--fs-text-muted); }
+    .dashboard-grid { display: grid; grid-template-columns: 2fr 1fr; gap: var(--fs-s-6); margin-bottom: var(--fs-s-6); }
+    @@media (max-width: 900px) { .dashboard-grid { grid-template-columns: 1fr; } }
+    .card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--fs-s-4); }
+    .card-head h3 { margin: 0; font-size: 18px; }
+
+    .courses-list { display: flex; flex-direction: column; gap: var(--fs-s-2); }
+    .course-item {
+        display: flex; align-items: center; gap: var(--fs-s-3);
+        padding: var(--fs-s-3); border-radius: var(--fs-r-md);
+        background: var(--fs-bg);
+        color: inherit; text-decoration: none;
+        transition: all var(--fs-trans);
+    }
+    .course-item:hover { background: var(--fs-primary-soft); }
+    .course-thumb-sm { font-size: 28px; }
+    .course-info { flex: 1; }
+    .course-info strong { display: block; font-size: 14px; }
+    .course-info small { font-size: 12px; color: var(--fs-text-muted); }
+    .course-go { color: var(--fs-primary); font-weight: 700; font-size: 18px; }
+
+    .subscription-card { display: flex; flex-direction: column; }
+    .sub-details { display: flex; flex-direction: column; gap: var(--fs-s-3); }
+    .sub-type { display: flex; align-items: center; gap: var(--fs-s-3); padding-bottom: var(--fs-s-3); border-bottom: 1px solid var(--fs-border); }
+    .sub-icon { font-size: 32px; }
+    .sub-type strong { display: block; font-size: 15px; }
+    .sub-type small { font-size: 12px; color: var(--fs-text-muted); }
+    .sub-stat { display: flex; justify-content: space-between; font-size: 14px; }
+    .sub-stat span { color: var(--fs-text-muted); }
+    .sub-stat strong { color: var(--fs-primary); }
+
+    .empty-state { text-align: center; padding: var(--fs-s-6) var(--fs-s-3); }
+    .empty-state p { margin-bottom: var(--fs-s-3); }
+    .challenge-content h4 { margin: 0 0 var(--fs-s-2); font-size: 16px; }
+    .progress-bar { width: 100%; height: 8px; background: var(--fs-border); border-radius: var(--fs-r-full); overflow: hidden; margin: var(--fs-s-3) 0 var(--fs-s-1); }
+    .progress-fill { height: 100%; background: linear-gradient(90deg, var(--fs-primary), var(--fs-secondary)); transition: width var(--fs-trans); }
+
+    .sug-section { margin-bottom: var(--fs-s-5); }
+    .sug-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: var(--fs-s-3); }
+    .sug-card {
+        display: flex; gap: var(--fs-s-3); padding: var(--fs-s-4);
+        border-right: 4px solid var(--fs-primary);
+        transition: all var(--fs-trans);
+    }
+    .sug-card:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,0.08); }
+    .sug-card.urgent { border-right-color: var(--fs-danger); background: linear-gradient(135deg, #FEE2E2 0%, var(--fs-surface) 60%); }
+    .sug-card.warn { border-right-color: var(--fs-accent); }
+    .sug-card.info { border-right-color: var(--fs-secondary); }
+    .sug-emoji { font-size: 32px; flex-shrink: 0; }
+    .sug-body { flex: 1; min-width: 0; }
+    .sug-body strong { display: block; font-size: 15px; margin-bottom: 4px; }
+    .sug-body p { margin: 0 0 var(--fs-s-2); font-size: 13px; color: var(--fs-text-muted); line-height: 1.6; }
+
+    .dm-section { padding: var(--fs-s-4) var(--fs-s-5); margin-bottom: var(--fs-s-5); border-right: 4px solid var(--fs-accent); }
+    .dm-section.all-done { border-right-color: var(--fs-success); background: linear-gradient(135deg, #ECFDF5 0%, white 60%); }
+    .dm-head { display: flex; justify-content: space-between; align-items: center; gap: var(--fs-s-3); margin-bottom: var(--fs-s-4); flex-wrap: wrap; }
+    .dm-head h3 { margin: 0 0 4px; font-size: 18px; }
+    .dm-progress-circle {
+        width: 56px; height: 56px; border-radius: 50%;
+        background: var(--fs-primary-soft);
+        display: flex; align-items: center; justify-content: center;
+        color: var(--fs-primary); font-weight: 800; font-size: 14px;
+        border: 2px solid var(--fs-primary);
+        flex-shrink: 0;
+    }
+    .dm-progress-circle.complete { background: var(--fs-success); color: white; border-color: var(--fs-success); font-size: 24px; }
+    .dm-goals { display: flex; flex-direction: column; gap: var(--fs-s-2); }
+    .dm-goal {
+        display: flex; align-items: center; gap: var(--fs-s-3);
+        padding: var(--fs-s-3);
+        background: var(--fs-bg);
+        border-radius: var(--fs-r-md);
+        transition: all var(--fs-trans);
+    }
+    .dm-goal.done { background: #ECFDF5; }
+    .dm-goal-emoji { font-size: 24px; flex-shrink: 0; width: 36px; text-align: center; }
+    .dm-goal-info { flex: 1; min-width: 0; }
+    .dm-goal-info strong { display: block; font-size: 14px; margin-bottom: 6px; }
+    .dm-bar { height: 6px; background: white; border-radius: 3px; overflow: hidden; }
+    .dm-bar-fill { height: 100%; background: linear-gradient(90deg, var(--fs-primary), var(--fs-secondary)); transition: width var(--fs-trans); }
+    .dm-goal.done .dm-bar-fill { background: var(--fs-success); }
+    .dm-goal-count { font-family: monospace; direction: ltr; font-size: 13px; color: var(--fs-text-muted); flex-shrink: 0; }
+    .dm-check { color: var(--fs-success); font-weight: 800; font-size: 18px; flex-shrink: 0; }
+    .dm-celebrate { margin-top: var(--fs-s-3); padding: var(--fs-s-3); background: var(--fs-success); color: white; border-radius: var(--fs-r-md); text-align: center; font-weight: 700; }
+
+    .rec-section { padding: var(--fs-s-4) var(--fs-s-5); margin-bottom: var(--fs-s-5); }
+    .rec-row { display: flex; gap: var(--fs-s-3); overflow-x: auto; padding-bottom: var(--fs-s-2); margin-top: var(--fs-s-3); scrollbar-width: thin; }
+    .rec-row::-webkit-scrollbar { height: 6px; }
+    .rec-row::-webkit-scrollbar-thumb { background: var(--fs-border); border-radius: 3px; }
+    .rec-card {
+        flex: 0 0 240px; text-decoration: none; color: inherit;
+        display: flex; flex-direction: column;
+        border-radius: var(--fs-r-md); overflow: hidden;
+        transition: transform 0.15s, box-shadow 0.15s;
+        background: var(--fs-bg);
+    }
+    .rec-card:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,0.10); }
+    .rec-thumb {
+        position: relative; aspect-ratio: 16/10;
+        background: linear-gradient(135deg, var(--fs-secondary), var(--fs-primary));
+        display: flex; align-items: center; justify-content: center;
+    }
+    .rec-thumb img { width: 100%; height: 100%; object-fit: cover; }
+    .rec-thumb-emoji { font-size: 42px; color: white; }
+    .rec-info { padding: var(--fs-s-2) var(--fs-s-3); display: flex; flex-direction: column; gap: 2px; }
+    .rec-info strong { font-size: 14px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .rec-info small { font-size: 11px; color: var(--fs-text-muted); }
+    .rec-meta { display: flex; gap: var(--fs-s-2); margin-top: var(--fs-s-1); font-size: 11px; color: var(--fs-text-muted); flex-wrap: wrap; }
+
+    .cw-section { padding: var(--fs-s-4) var(--fs-s-5); margin-bottom: var(--fs-s-5); }
+    .cw-row { display: flex; gap: var(--fs-s-3); overflow-x: auto; padding-bottom: var(--fs-s-2); margin-top: var(--fs-s-3); scrollbar-width: thin; }
+    .cw-row::-webkit-scrollbar { height: 6px; }
+    .cw-row::-webkit-scrollbar-thumb { background: var(--fs-border); border-radius: 3px; }
+    .cw-card {
+        flex: 0 0 220px; text-decoration: none; color: inherit;
+        display: flex; flex-direction: column;
+        border-radius: var(--fs-r-md); overflow: hidden;
+        transition: transform 0.15s, box-shadow 0.15s;
+        background: var(--fs-bg);
+    }
+    .cw-card:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,0.10); }
+    .cw-thumb {
+        position: relative; aspect-ratio: 16/9;
+        background: linear-gradient(135deg, var(--fs-primary), var(--fs-secondary));
+        display: flex; align-items: center; justify-content: center;
+    }
+    .cw-thumb img { width: 100%; height: 100%; object-fit: cover; }
+    .cw-thumb-emoji { font-size: 42px; color: white; }
+    .cw-play {
+        position: absolute; top: 50%; right: 50%; transform: translate(50%, -50%);
+        width: 44px; height: 44px; border-radius: 50%;
+        background: rgba(0,0,0,0.7); color: white;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 16px; pointer-events: none;
+    }
+    .cw-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: rgba(255,255,255,0.3); }
+    .cw-bar-fill { height: 100%; background: var(--fs-accent); }
+    .cw-info { padding: var(--fs-s-2) var(--fs-s-3); display: flex; flex-direction: column; gap: 2px; }
+    .cw-info strong { font-size: 14px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .cw-info small { font-size: 11px; color: var(--fs-text-muted); }
+    .cw-info .cw-pos { font-family: monospace; direction: ltr; text-align: right; }
+</style>
+
+@code {
+    private FSEdu.Shared.Contracts.Dashboard.StudentDashboardDto? _data;
+    private List<FSEdu.Shared.Contracts.Courses.ContinueWatchingItemDto>? _continue;
+    private List<FSEdu.Shared.Contracts.Courses.CourseListItemDto>? _recs;
+    private FSEdu.Shared.Contracts.Courses.DailyMissionDto? _mission;
+    private List<FSEdu.Shared.Contracts.Courses.SuggestionDto>? _suggestions;
+    private bool _loaded;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            if (Auth.IsAuthenticated)
+            {
+                try { _data = await Api.GetStudentDashboardAsync(); }
+                catch { }
+                try { _mission = await Api.GetDailyMissionAsync(); }
+                catch { }
+                try { _suggestions = await Api.GetMySuggestionsAsync(); }
+                catch { }
+                try { _continue = await Api.GetContinueWatchingAsync(); }
+                catch { }
+                try { _recs = await Api.GetCourseRecommendationsAsync(); }
+                catch { }
+            }
+            _loaded = true; StateHasChanged();
+        }
+    }
+
+    private static string SugClass(string kind) => kind switch
+    {
+        "streak_risk" or "upcoming_live" => "urgent",
+        "subscription_expiring" or "low_score" => "warn",
+        "stale" or "first_notes" or "first_assessment" => "info",
+        _ => ""
+    };
+
+    private static string FormatPos(int sec)
+    {
+        if (sec <= 0) return "00:00";
+        var h = sec / 3600;
+        var m = (sec % 3600) / 60;
+        var s = sec % 60;
+        return h > 0 ? $"{h:D2}:{m:D2}:{s:D2}" : $"{m:D2}:{s:D2}";
+    }
+}

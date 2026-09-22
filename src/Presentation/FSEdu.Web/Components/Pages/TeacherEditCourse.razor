@@ -1,0 +1,352 @@
+@page "/teacher/courses/{CourseId:guid}/edit"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject NavigationManager Nav
+
+<PageTitle>تعديل الدورة</PageTitle>
+
+<div class="edit-page">
+    <div class="fs-container">
+        @if (!_loaded)
+        {
+            <div class="fs-center" style="padding:60px"><span class="fs-spinner"></span></div>
+        }
+        else if (_course is null)
+        {
+            <div class="fs-alert fs-alert-error">الدورة غير موجودة</div>
+        }
+        else
+        {
+            <div class="edit-head">
+                <div>
+                    <a href="/teacher/courses" class="fs-text-muted">← عودة للدورات</a>
+                    <h1>@_course.Title</h1>
+                    <p class="fs-text-muted">@_course.SubjectName · @_course.StageName · @StatusLabel(_course.Status)</p>
+                </div>
+                @if (_course.Status == "Draft")
+                {
+                    <button class="fs-btn fs-btn-primary" @onclick="SubmitForReview" disabled="@_submitting">
+                        @if (_submitting) { <span class="fs-spinner"></span> }
+                        📤 إرسال للمراجعة
+                    </button>
+                }
+            </div>
+
+            @if (!string.IsNullOrEmpty(_message))
+            {
+                <div class="fs-alert @(_isError ? "fs-alert-error" : "fs-alert-success")">
+                    <span>@(_isError ? "⚠️" : "✓")</span>
+                    <span>@_message</span>
+                </div>
+            }
+
+            <div class="chapters">
+                @foreach (var chapter in _course.Chapters)
+                {
+                    <div class="chapter fs-card">
+                        <div class="chapter-head">
+                            <h3>📖 @chapter.OrderNum. @chapter.Title</h3>
+                            <div class="chapter-actions">
+                                <button class="fs-btn fs-btn-outline fs-btn-sm" @onclick="() => OpenAddLesson(chapter.Id)">
+                                    + درس
+                                </button>
+                                <button class="fs-btn fs-btn-ghost fs-btn-sm delete-btn"
+                                        @onclick="() => DeleteChapter(chapter.Id)"
+                                        disabled="@(_deletingId == chapter.Id)"
+                                        title="حذف الفصل">
+                                    🗑️
+                                </button>
+                            </div>
+                        </div>
+                        @if (chapter.Lessons.Any())
+                        {
+                            <div class="lessons">
+                                @foreach (var l in chapter.Lessons)
+                                {
+                                    <div class="lesson-row">
+                                        <span class="lesson-icon">@LessonIcon(l.Type)</span>
+                                        <div class="lesson-info">
+                                            <strong>@l.OrderNum. @l.Title</strong>
+                                            <small>
+                                                @TypeLabel(l.Type) · @FormatDuration(l.DurationSeconds)
+                                                @if (l.IsFreePreview) { <span class="free-tag">🔓 تجريبي مجاني</span> }
+                                            </small>
+                                        </div>
+                                        <button class="fs-btn fs-btn-ghost fs-btn-sm delete-btn"
+                                                @onclick="() => DeleteLesson(l.Id)"
+                                                disabled="@(_deletingId == l.Id)"
+                                                title="حذف الدرس">
+                                            🗑️
+                                        </button>
+                                    </div>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <p class="fs-text-muted" style="text-align:center;padding:var(--fs-s-4)">
+                                لا توجد دروس بعد. أضف أول درس.
+                            </p>
+                        }
+                    </div>
+                }
+
+                <button class="fs-btn fs-btn-outline fs-btn-block add-ch" @onclick="() => _showAddChapter = true">
+                    + إضافة فصل جديد
+                </button>
+
+                <a href="@($"/teacher/courses/{CourseId}/assessments/new")" class="fs-btn fs-btn-secondary fs-btn-block" style="margin-top:var(--fs-s-3)">
+                    📝 إضافة اختبار / واجب
+                </a>
+            </div>
+        }
+
+        @* ─── Add Chapter Modal ─── *@
+        @if (_showAddChapter)
+        {
+            <div class="modal-backdrop" @onclick="() => _showAddChapter = false">
+                <div class="modal fs-card fs-card-elevated" @onclick:stopPropagation="true">
+                    <h3>إضافة فصل جديد</h3>
+                    <div class="fs-form-group">
+                        <label class="fs-label">عنوان الفصل</label>
+                        <input class="fs-input" @bind="_newChapterTitle" placeholder="مثال: الوحدة الأولى — المقدمة" />
+                    </div>
+                    <div class="modal-actions">
+                        <button class="fs-btn fs-btn-outline" @onclick="() => _showAddChapter = false" disabled="@_savingChapter">إلغاء</button>
+                        <button class="fs-btn fs-btn-primary" @onclick="AddChapter" disabled="@_savingChapter">
+                            @if (_savingChapter) { <span class="fs-spinner"></span><span>جارٍ الحفظ...</span> }
+                            else { <span>إضافة</span> }
+                        </button>
+                    </div>
+                </div>
+            </div>
+        }
+
+        @* ─── Add Lesson Modal ─── *@
+        @if (_showAddLesson)
+        {
+            <div class="modal-backdrop" @onclick="() => _showAddLesson = false">
+                <div class="modal fs-card fs-card-elevated" @onclick:stopPropagation="true">
+                    <h3>إضافة درس جديد</h3>
+                    <div class="fs-form-group">
+                        <label class="fs-label">عنوان الدرس</label>
+                        <input class="fs-input" @bind="_newLessonTitle" placeholder="مثال: الدرس الأول — مقدمة" />
+                    </div>
+                    <div class="fs-form-row">
+                        <div class="fs-form-group">
+                            <label class="fs-label">النوع</label>
+                            <select class="fs-select" @bind="_newLessonType">
+                                <option value="Recorded">مسجّل</option>
+                                <option value="Live">حصة مباشرة</option>
+                                <option value="Document">مذكرة PDF</option>
+                                <option value="Quiz">اختبار</option>
+                            </select>
+                        </div>
+                        <div class="fs-form-group">
+                            <label class="fs-label">المدة (بالدقائق)</label>
+                            <input type="number" class="fs-input" @bind="_newLessonMinutes" min="1" />
+                        </div>
+                    </div>
+                    <div class="fs-form-group">
+                        <label class="fs-label">رابط الفيديو (لو مسجّل)</label>
+                        <input class="fs-input fs-input-phone" @bind="_newLessonUrl" placeholder="https://..." />
+                    </div>
+                    <div class="fs-form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" @bind="_newLessonFree" />
+                            جعل هذا الدرس تجريبيًا مجانيًا (للزوار غير المشتركين)
+                        </label>
+                    </div>
+                    <div class="modal-actions">
+                        <button class="fs-btn fs-btn-outline" @onclick="() => _showAddLesson = false" disabled="@_savingLesson">إلغاء</button>
+                        <button class="fs-btn fs-btn-primary" @onclick="AddLesson" disabled="@_savingLesson">
+                            @if (_savingLesson) { <span class="fs-spinner"></span><span>جارٍ الحفظ...</span> }
+                            else { <span>إضافة الدرس</span> }
+                        </button>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .edit-page { padding: var(--fs-s-8) 0; min-height: calc(100vh - 72px); }
+    .edit-head { display: flex; justify-content: space-between; align-items: start; margin-bottom: var(--fs-s-6); flex-wrap: wrap; gap: var(--fs-s-3); }
+    .edit-head h1 { font-size: 28px; margin: var(--fs-s-1) 0; }
+    .chapters { display: flex; flex-direction: column; gap: var(--fs-s-4); }
+    .chapter-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--fs-s-3); }
+    .chapter-head h3 { margin: 0; font-size: 17px; }
+    .chapter-actions { display: flex; gap: var(--fs-s-2); align-items: center; }
+    .delete-btn { color: var(--fs-danger); padding: 6px 10px; }
+    .delete-btn:hover { background: #FEE; }
+    .lessons { display: flex; flex-direction: column; gap: var(--fs-s-2); }
+    .lesson-row {
+        display: flex; align-items: center; gap: var(--fs-s-3);
+        padding: var(--fs-s-3);
+        background: var(--fs-bg);
+        border-radius: var(--fs-r-md);
+    }
+    .lesson-icon { font-size: 24px; }
+    .lesson-info { flex: 1; }
+    .lesson-info strong { display: block; font-size: 14px; }
+    .lesson-info small { font-size: 12px; color: var(--fs-text-muted); }
+    .free-tag { color: var(--fs-success); font-weight: 600; margin-right: var(--fs-s-2); }
+    .add-ch { border-style: dashed; }
+    .checkbox-label { display: flex; align-items: center; gap: var(--fs-s-2); cursor: pointer; }
+    .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; padding: var(--fs-s-4); z-index: 100; backdrop-filter: blur(4px); }
+    .modal { max-width: 520px; width: 100%; }
+    .modal-actions { display: flex; gap: var(--fs-s-2); justify-content: flex-end; margin-top: var(--fs-s-4); }
+    .fs-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--fs-s-3); }
+</style>
+
+@code {
+    [Parameter] public Guid CourseId { get; set; }
+
+    private FSEdu.Shared.Contracts.Courses.CourseDetailDto? _course;
+    private bool _loaded;
+    private bool _submitting;
+    private string? _message;
+    private bool _isError;
+
+    private bool _showAddChapter;
+    private string _newChapterTitle = "";
+    private bool _savingChapter;
+
+    private bool _showAddLesson;
+    private Guid _targetChapterId;
+    private string _newLessonTitle = "";
+    private string _newLessonType = "Recorded";
+    private int _newLessonMinutes = 20;
+    private string _newLessonUrl = "";
+    private bool _newLessonFree;
+    private bool _savingLesson;
+
+    private Guid? _deletingId;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            await Load();
+        }
+    }
+
+    private async Task Load()
+    {
+        try { _course = await Api.GetCourseDetailsAsync(CourseId); }
+        catch { _course = null; }
+        _loaded = true; StateHasChanged();
+    }
+
+    private async Task AddChapter()
+    {
+        if (_savingChapter) return; // prevent double-click
+        if (_course is null || string.IsNullOrWhiteSpace(_newChapterTitle)) return;
+
+        _savingChapter = true; StateHasChanged();
+        try
+        {
+            // Server computes OrderNum — client value ignored for safety
+            var req = new FSEdu.Shared.Contracts.Courses.AddChapterRequest(_newChapterTitle.Trim(), 0);
+            var (id, err) = await Api.AddChapterAsync(CourseId, req);
+            if (err is null) { _showAddChapter = false; _newChapterTitle = ""; await Load(); }
+            else { ShowError(err.Message); }
+        }
+        finally { _savingChapter = false; }
+    }
+
+    private void OpenAddLesson(Guid chapterId)
+    {
+        _targetChapterId = chapterId;
+        _showAddLesson = true;
+        _newLessonTitle = ""; _newLessonType = "Recorded";
+        _newLessonMinutes = 20; _newLessonUrl = ""; _newLessonFree = false;
+    }
+
+    private async Task AddLesson()
+    {
+        if (_savingLesson) return;
+        if (_course is null || string.IsNullOrWhiteSpace(_newLessonTitle)) return;
+
+        _savingLesson = true; StateHasChanged();
+        try
+        {
+            var req = new FSEdu.Shared.Contracts.Courses.AddLessonRequest(
+                _newLessonTitle.Trim(), _newLessonType, _newLessonMinutes * 60,
+                string.IsNullOrWhiteSpace(_newLessonUrl) ? null : _newLessonUrl.Trim(),
+                null, _newLessonFree, 0); // server computes OrderNum
+            var (id, err) = await Api.AddLessonAsync(_targetChapterId, req);
+            if (err is null) { _showAddLesson = false; await Load(); }
+            else { ShowError(err.Message); }
+        }
+        finally { _savingLesson = false; }
+    }
+
+    private async Task DeleteChapter(Guid chapterId)
+    {
+        if (_deletingId is not null) return;
+        _deletingId = chapterId; StateHasChanged();
+        try
+        {
+            var err = await Api.DeleteChapterAsync(chapterId);
+            if (err is null) { ShowSuccess("تم حذف الفصل"); await Load(); }
+            else { ShowError(err.Message); }
+        }
+        finally { _deletingId = null; }
+    }
+
+    private async Task DeleteLesson(Guid lessonId)
+    {
+        if (_deletingId is not null) return;
+        _deletingId = lessonId; StateHasChanged();
+        try
+        {
+            var err = await Api.DeleteLessonAsync(lessonId);
+            if (err is null) { ShowSuccess("تم حذف الدرس"); await Load(); }
+            else { ShowError(err.Message); }
+        }
+        finally { _deletingId = null; }
+    }
+
+    private async Task SubmitForReview()
+    {
+        _submitting = true;
+        try
+        {
+            var err = await Api.SubmitCourseAsync(CourseId);
+            if (err is null) { ShowSuccess("تم إرسال الدورة للمراجعة!"); await Load(); }
+            else { ShowError(err.Message); }
+        }
+        finally { _submitting = false; }
+    }
+
+    private void ShowError(string msg) { _message = msg; _isError = true; StateHasChanged(); }
+    private void ShowSuccess(string msg) { _message = msg; _isError = false; StateHasChanged(); }
+
+    private static string StatusLabel(string s) => s switch
+    {
+        "Draft" => "مسودة", "PendingReview" => "بانتظار الموافقة",
+        "Published" => "منشورة", "Rejected" => "مرفوضة", _ => s
+    };
+
+    private static string TypeLabel(string t) => t switch
+    {
+        "Recorded" => "مسجّل", "Live" => "مباشر",
+        "Document" => "مذكرة", "Quiz" => "اختبار", _ => t
+    };
+
+    private static string LessonIcon(string t) => t switch
+    {
+        "Recorded" => "🎥", "Live" => "📡",
+        "Document" => "📄", "Quiz" => "📝", _ => "📘"
+    };
+
+    private static string FormatDuration(int sec)
+    {
+        var m = sec / 60;
+        return m > 60 ? $"{m / 60}س {m % 60}د" : $"{m} دقيقة";
+    }
+}

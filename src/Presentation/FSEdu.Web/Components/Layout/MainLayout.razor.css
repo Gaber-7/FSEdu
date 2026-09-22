@@ -1,0 +1,129 @@
+::deep .fs-layout {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+::deep .fs-navbar {
+    border-bottom: 1px solid var(--fs-border);
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    backdrop-filter: blur(8px);
+    background: rgba(255, 255, 255, 0.9);
+}
+
+::deep [data-theme="dark"] .fs-navbar {
+    background: rgba(21, 27, 43, 0.9);
+}
+
+::deep .fs-navbar-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 72px;
+    gap: var(--fs-s-8);
+}
+
+::deep .fs-logo {
+    display: flex;
+    align-items: center;
+    gap: var(--fs-s-2);
+    font-weight: 800;
+    font-size: 22px;
+    text-decoration: none;
+    color: var(--fs-text);
+}
+
+::deep .fs-logo-mark {
+    background: linear-gradient(135deg, var(--fs-primary) 0%, var(--fs-secondary) 100%);
+    color: white;
+    padding: 6px 10px;
+    border-radius: 10px;
+    letter-spacing: -0.5px;
+    font-size: 16px;
+}
+
+::deep .fs-logo-text {
+    color: var(--fs-primary);
+    letter-spacing: -0.5px;
+}
+
+::deep .fs-nav-links {
+    display: flex;
+    gap: var(--fs-s-6);
+    align-items: center;
+}
+
+::deep .fs-nav-links a {
+    color: var(--fs-text-muted);
+    font-weight: 500;
+    font-size: 15px;
+    transition: color var(--fs-trans);
+}
+
+::deep .fs-nav-links a:hover {
+    color: var(--fs-primary);
+}
+
+::deep .fs-nav-actions {
+    display: flex;
+    gap: var(--fs-s-2);
+    align-items: center;
+}
+
+@media (max-width: 768px) {
+    ::deep .fs-nav-links {
+        display: none;
+    }
+}
+
+::deep .fs-main {
+    flex: 1;
+    min-height: calc(100vh - 72px);
+}
+
+::deep .fs-footer {
+    background: var(--fs-surface);
+    border-top: 1px solid var(--fs-border);
+    padding: var(--fs-s-12) 0 var(--fs-s-6) 0;
+    margin-top: var(--fs-s-16);
+}
+
+::deep .fs-footer-grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr 1fr;
+    gap: var(--fs-s-8);
+    margin-bottom: var(--fs-s-8);
+}
+
+@media (max-width: 768px) {
+    ::deep .fs-footer-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+::deep .fs-footer h4 {
+    font-size: 15px;
+    font-weight: 700;
+    margin-bottom: var(--fs-s-4);
+}
+
+::deep .fs-footer a {
+    display: block;
+    color: var(--fs-text-muted);
+    padding: 4px 0;
+    font-size: 14px;
+}
+
+::deep .fs-footer a:hover {
+    color: var(--fs-primary);
+}
+
+::deep .fs-footer-bottom {
+    border-top: 1px solid var(--fs-border);
+    padding-top: var(--fs-s-6);
+    text-align: center;
+    color: var(--fs-text-subtle);
+    font-size: 14px;
+}

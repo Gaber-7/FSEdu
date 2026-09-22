@@ -1,0 +1,163 @@
+@page "/teacher/courses/new"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject NavigationManager Nav
+
+<PageTitle>دورة جديدة — المدرس</PageTitle>
+
+<div class="auth-wrapper">
+    <div class="fs-container">
+        <div class="auth-card fs-card fs-card-elevated">
+            <div class="auth-head">
+                <h1>📚 إنشاء دورة جديدة</h1>
+                <p class="fs-text-muted">املأ البيانات الأساسية للدورة، ثم أضف الفصول والدروس</p>
+            </div>
+
+            @if (!string.IsNullOrEmpty(_error))
+            {
+                <div class="fs-alert fs-alert-error"><span>⚠️</span><span>@_error</span></div>
+            }
+
+            <div class="fs-form-group">
+                <label class="fs-label">عنوان الدورة</label>
+                <input class="fs-input" @bind="_title" placeholder="مثال: الجبر للصف السادس الابتدائي" />
+            </div>
+
+            <div class="fs-form-row">
+                <div class="fs-form-group">
+                    <label class="fs-label">المرحلة الدراسية</label>
+                    <select class="fs-select" @bind="_stageId" @bind:after="OnStageChanged">
+                        <option value="0">-- اختر المرحلة --</option>
+                        @if (_stages is not null)
+                        {
+                            @foreach (var s in _stages)
+                            {
+                                <option value="@s.Id">@s.NameAr</option>
+                            }
+                        }
+                    </select>
+                </div>
+
+                <div class="fs-form-group">
+                    <label class="fs-label">المادة</label>
+                    <select class="fs-select" @bind="_subjectId">
+                        <option value="0">-- اختر المادة --</option>
+                        @if (_subjects is not null)
+                        {
+                            @foreach (var s in _subjects)
+                            {
+                                <option value="@s.Id">@s.NameAr</option>
+                            }
+                        }
+                    </select>
+                </div>
+            </div>
+
+            <div class="fs-form-group">
+                <label class="fs-label">الترم</label>
+                <select class="fs-select" @bind="_term">
+                    <option value="First">الترم الأول</option>
+                    <option value="Second">الترم الثاني</option>
+                    <option value="Annual">سنوي (كامل)</option>
+                </select>
+            </div>
+
+            <div class="fs-form-group">
+                <label class="fs-label">الوصف (اختياري)</label>
+                <textarea class="fs-input" rows="4" @bind="_description"
+                          placeholder="ما سيتعلّمه الطلاب في هذه الدورة..."></textarea>
+            </div>
+
+            <div class="fs-form-group">
+                <label class="fs-label">رابط صورة الغلاف (اختياري)</label>
+                <input class="fs-input fs-input-phone" @bind="_thumbnailUrl" placeholder="https://..." />
+            </div>
+
+            <div class="fs-form-group">
+                <label class="fs-label">رابط فيديو المعاينة (اختياري)</label>
+                <input class="fs-input fs-input-phone" @bind="_previewVideoUrl" placeholder="رابط يوتيوب أو فيديو قصير تعريفي بالدورة" />
+                <small class="fs-text-muted">يظهر للطلاب كزر "معاينة الدورة" في صفحة الدورة.</small>
+            </div>
+
+            <button class="fs-btn fs-btn-primary fs-btn-lg fs-btn-block" @onclick="Submit" disabled="@_loading">
+                @if (_loading) { <span class="fs-spinner"></span><span>جارٍ الإنشاء...</span> }
+                else { <span>إنشاء الدورة ومتابعة إضافة المحتوى ←</span> }
+            </button>
+
+            <div class="auth-alt">
+                <a href="/teacher/courses">→ العودة للدورات</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .auth-wrapper {
+        padding: 60px 0; min-height: calc(100vh - 72px);
+        background: radial-gradient(at 10% 0%, var(--fs-primary-soft) 0%, transparent 50%);
+    }
+    .auth-card { max-width: 640px; margin: 0 auto; }
+    .auth-head { text-align: center; margin-bottom: var(--fs-s-6); }
+    .auth-head h1 { font-size: 26px; margin: var(--fs-s-2) 0; }
+    .fs-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--fs-s-4); }
+    @@media (max-width: 600px) { .fs-form-row { grid-template-columns: 1fr; } }
+    .auth-alt { text-align: center; margin-top: var(--fs-s-4); font-size: 14px; }
+</style>
+
+@code {
+    private List<FSEdu.Shared.Contracts.Reference.StageDto>? _stages;
+    private List<FSEdu.Shared.Contracts.Reference.SubjectDto>? _subjects;
+    private int _stageId;
+    private int _subjectId;
+    private string _title = "";
+    private string _description = "";
+    private string _thumbnailUrl = "";
+    private string _previewVideoUrl = "";
+    private string _term = "First";
+    private string? _error;
+    private bool _loading;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var stages = await Api.GetStagesAsync();
+            _stages = stages.Where(s => s.ParentStageId != null).OrderBy(s => s.LevelOrder).ToList();
+        }
+        catch { }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) { await Auth.RestoreAsync(); StateHasChanged(); }
+    }
+
+    private async Task OnStageChanged()
+    {
+        if (_stageId == 0) { _subjects = null; return; }
+        try { _subjects = await Api.GetSubjectsAsync(_stageId); }
+        catch { _subjects = new(); }
+    }
+
+    private async Task Submit()
+    {
+        _error = null;
+        if (string.IsNullOrWhiteSpace(_title) || _title.Length < 5)
+        { _error = "العنوان يجب أن يكون 5 أحرف على الأقل"; return; }
+        if (_stageId == 0) { _error = "اختر المرحلة"; return; }
+        if (_subjectId == 0) { _error = "اختر المادة"; return; }
+
+        _loading = true;
+        try
+        {
+            var req = new FSEdu.Shared.Contracts.Courses.CreateCourseRequest(
+                _subjectId, _stageId, _title, _description, _thumbnailUrl, _term, _previewVideoUrl);
+            var (id, err) = await Api.CreateCourseAsync(req);
+            if (err is not null) { _error = err.Message; return; }
+            Nav.NavigateTo($"/teacher/courses/{id}/edit");
+        }
+        catch (Exception ex) { _error = "خطأ: " + ex.Message; }
+        finally { _loading = false; }
+    }
+}

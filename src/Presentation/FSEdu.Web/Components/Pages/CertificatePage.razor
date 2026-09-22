@@ -1,0 +1,255 @@
+@page "/certificate/{CourseId:guid}"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject IJSRuntime JS
+
+<PageTitle>شهادة إتمام الدورة</PageTitle>
+
+<div class="cert-page">
+    <div class="cert-actions print-hide">
+        <a href="/student/progress" class="fs-btn fs-btn-outline">← الرجوع</a>
+        @if (_data is not null)
+        {
+            <button class="fs-btn fs-btn-primary" @onclick="DownloadPdf" disabled="@_pdfBusy">
+                @if (_pdfBusy) { <span class="fs-spinner"></span><span>جارٍ التحضير...</span> }
+                else { <span>📄 تحميل PDF</span> }
+            </button>
+            <button class="fs-btn fs-btn-ghost" @onclick="Print">🖨️ طباعة</button>
+        }
+    </div>
+
+    @if (!_loaded)
+    {
+        <div class="fs-center" style="padding:80px"><span class="fs-spinner"></span></div>
+    }
+    else if (!Auth.IsAuthenticated)
+    {
+        <div class="fs-alert fs-alert-error print-hide">يجب تسجيل الدخول.</div>
+    }
+    else if (_error is not null)
+    {
+        <div class="fs-card cert-error print-hide">
+            <div style="font-size:48px">🚫</div>
+            <h3>@_error</h3>
+            <a href="/student/progress" class="fs-btn fs-btn-outline">عرض التقدّم</a>
+        </div>
+    }
+    else if (_data is not null)
+    {
+        <div class="cert">
+            <div class="cert-corner tl"></div>
+            <div class="cert-corner tr"></div>
+            <div class="cert-corner bl"></div>
+            <div class="cert-corner br"></div>
+
+            <div class="cert-inner">
+                <div class="cert-brand">
+                    <div class="brand-logo">FS</div>
+                    <div class="brand-name">منصة FSEdu التعليمية</div>
+                </div>
+
+                <h1 class="cert-title">شهادة إتمام دورة</h1>
+
+                <p class="cert-tagline">تشهد منصة <strong>FSEdu</strong> بأن الطالب/ـة</p>
+
+                <div class="cert-name">@_data.StudentName</div>
+                <div class="cert-line"></div>
+
+                <p class="cert-body">
+                    قد أتمّ بنجاح دورة
+                </p>
+
+                <h2 class="cert-course">"@_data.CourseTitle"</h2>
+
+                <p class="cert-meta">
+                    في مادة <strong>@_data.SubjectName</strong> · <strong>@_data.StageName</strong><br />
+                    تحت إشراف الأستاذ/ة <strong>@_data.TeacherName</strong>
+                </p>
+
+                <p class="cert-stats">
+                    أكمل <strong>@_data.TotalLessons</strong> درسًا بنجاح
+                </p>
+
+                <div class="cert-footer">
+                    <div>
+                        <small>تاريخ الإكمال</small>
+                        <strong>@_data.CompletedAtUtc.ToLocalTime().ToString("yyyy/MM/dd")</strong>
+                    </div>
+                    <div class="cert-seal">
+                        <div class="seal-circle">FSEdu</div>
+                    </div>
+                    <div>
+                        <small>رقم الشهادة</small>
+                        <strong class="cert-number">@_data.CertificateNumber</strong>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    .cert-page { background: #F1F5F9; min-height: 100vh; padding: var(--fs-s-6) var(--fs-s-3); }
+    .cert-actions { max-width: 960px; margin: 0 auto var(--fs-s-4); display: flex; justify-content: space-between; }
+    .cert-error { padding: 60px; text-align: center; max-width: 500px; margin: 60px auto; }
+    .cert-error h3 { margin: var(--fs-s-3) 0 var(--fs-s-4); }
+
+    /* Certificate frame */
+    .cert {
+        max-width: 960px; margin: 0 auto;
+        aspect-ratio: 4 / 3;
+        background:
+            radial-gradient(ellipse at top right, rgba(91,79,229,0.08), transparent 50%),
+            radial-gradient(ellipse at bottom left, rgba(245,158,11,0.10), transparent 50%),
+            #FFFFFF;
+        border: 14px solid transparent;
+        background-clip: padding-box;
+        position: relative;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.18);
+        font-family: 'Tajawal', 'Cairo', 'Segoe UI', Tahoma, sans-serif;
+    }
+    .cert::before {
+        content: ""; position: absolute; inset: 0;
+        border: 3px solid transparent;
+        background: linear-gradient(135deg, #5B4FE5, #F59E0B, #5B4FE5) border-box;
+        -webkit-mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
+        -webkit-mask-composite: destination-out; mask-composite: exclude;
+        pointer-events: none;
+    }
+    .cert-corner {
+        position: absolute; width: 80px; height: 80px;
+        border: 4px solid #5B4FE5;
+    }
+    .cert-corner.tl { top: 24px; right: 24px; border-left: none; border-bottom: none; }
+    .cert-corner.tr { top: 24px; left: 24px;  border-right: none; border-bottom: none; }
+    .cert-corner.bl { bottom: 24px; right: 24px; border-left: none; border-top: none; }
+    .cert-corner.br { bottom: 24px; left: 24px;  border-right: none; border-top: none; }
+
+    .cert-inner {
+        position: relative; z-index: 2;
+        padding: 70px 80px; height: 100%;
+        display: flex; flex-direction: column; align-items: center; text-align: center;
+    }
+
+    .cert-brand { display: flex; align-items: center; gap: var(--fs-s-2); margin-bottom: var(--fs-s-5); }
+    .brand-logo {
+        width: 48px; height: 48px; border-radius: 12px;
+        background: linear-gradient(135deg, #5B4FE5, #8B7FE8); color: white;
+        display: flex; align-items: center; justify-content: center;
+        font-weight: 800; font-size: 18px;
+    }
+    .brand-name { font-size: 17px; font-weight: 700; color: #5B4FE5; }
+
+    .cert-title {
+        font-size: 36px; font-weight: 900;
+        margin: 0 0 var(--fs-s-3); color: #1E293B; letter-spacing: 1px;
+    }
+    .cert-tagline { font-size: 16px; color: #475569; margin: var(--fs-s-2) 0; }
+
+    .cert-name {
+        font-size: 44px; font-weight: 800;
+        background: linear-gradient(135deg, #5B4FE5, #F59E0B);
+        -webkit-background-clip: text; background-clip: text; color: transparent;
+        margin: var(--fs-s-3) 0 6px;
+    }
+    .cert-line {
+        width: 60%; height: 2px;
+        background: linear-gradient(90deg, transparent, #5B4FE5, transparent);
+        margin-bottom: var(--fs-s-4);
+    }
+
+    .cert-body { font-size: 16px; color: #475569; margin: 0; }
+    .cert-course {
+        font-size: 28px; font-weight: 800; color: #1E293B;
+        margin: var(--fs-s-2) 0 var(--fs-s-3);
+    }
+    .cert-meta { font-size: 15px; color: #475569; line-height: 1.8; margin: var(--fs-s-2) 0; }
+    .cert-stats { font-size: 15px; color: #047857; font-weight: 600; margin-top: var(--fs-s-3); }
+
+    .cert-footer {
+        margin-top: auto; padding-top: var(--fs-s-5);
+        width: 100%; display: flex; justify-content: space-between; align-items: end;
+        border-top: 1px dashed #CBD5E1;
+    }
+    .cert-footer small { display: block; font-size: 11px; color: #64748B; margin-bottom: 4px; }
+    .cert-footer strong { font-size: 14px; color: #1E293B; }
+    .cert-number { font-family: 'Courier New', monospace; }
+
+    .cert-seal { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+    .seal-circle {
+        width: 80px; height: 80px; border-radius: 50%;
+        border: 3px solid #5B4FE5; color: #5B4FE5;
+        display: flex; align-items: center; justify-content: center;
+        font-weight: 800; font-size: 14px;
+        background: rgba(91,79,229,0.06);
+        transform: rotate(-12deg);
+    }
+
+    /* Print rules */
+    @@media print {
+        .print-hide, .cert-page { background: white !important; padding: 0 !important; }
+        .print-hide { display: none !important; }
+        .cert {
+            box-shadow: none !important;
+            margin: 0 !important;
+            page-break-inside: avoid;
+            max-width: 100%;
+        }
+        @@page { size: landscape; margin: 0; }
+    }
+
+    @@media (max-width: 700px) {
+        .cert-inner { padding: 32px 22px; }
+        .cert-title { font-size: 24px; }
+        .cert-name { font-size: 28px; }
+        .cert-course { font-size: 20px; }
+        .cert-corner { width: 50px; height: 50px; }
+    }
+</style>
+
+@code {
+    [Parameter] public Guid CourseId { get; set; }
+
+    private FSEdu.Shared.Contracts.Courses.CourseCertificateDto? _data;
+    private string? _error;
+    private bool _loaded;
+    private bool _pdfBusy;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            if (Auth.IsAuthenticated)
+            {
+                var (data, err) = await Api.GetCourseCertificateAsync(CourseId);
+                if (err is not null) _error = err.Message;
+                else _data = data;
+            }
+            _loaded = true;
+            StateHasChanged();
+        }
+    }
+
+    private async Task Print()
+    {
+        try { await JS.InvokeVoidAsync("window.print"); } catch { }
+    }
+
+    private async Task DownloadPdf()
+    {
+        if (_data is null) return;
+        _pdfBusy = true; StateHasChanged();
+        try
+        {
+            var bytes = await Api.DownloadCertificatePdfAsync(CourseId);
+            if (bytes is null || bytes.Length == 0) return;
+            var base64 = Convert.ToBase64String(bytes);
+            var fileName = $"FSEdu-Certificate-{_data.CertificateNumber}.pdf";
+            await JS.InvokeVoidAsync("fseduDownload.fromBase64", base64, "application/pdf", fileName);
+        }
+        catch { }
+        finally { _pdfBusy = false; StateHasChanged(); }
+    }
+}

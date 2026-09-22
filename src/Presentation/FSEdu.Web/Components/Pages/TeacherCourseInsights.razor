@@ -1,0 +1,236 @@
+@page "/teacher/courses/{CourseId:guid}/insights"
+@rendermode InteractiveServer
+@inject FSEdu.Web.Services.ApiClient Api
+@inject FSEdu.Web.Services.AuthState Auth
+@inject NavigationManager Nav
+
+<PageTitle>تحليلات: @(_data?.CourseTitle ?? "")</PageTitle>
+
+<div class="ci-page">
+    <div class="fs-container">
+        <a href="/teacher/courses" class="ci-back">← دوراتي</a>
+
+        @if (!_loaded)
+        {
+            <div class="fs-center" style="padding:80px"><span class="fs-spinner"></span></div>
+        }
+        else if (_data is null)
+        {
+            <div class="fs-alert fs-alert-error">تعذّر التحميل أو ليست لديك صلاحية الوصول.</div>
+        }
+        else
+        {
+            <header class="ci-head">
+                <h1>📊 @_data.CourseTitle</h1>
+                <a href="/teacher/courses/@_data.CourseId/edit" class="fs-btn fs-btn-outline fs-btn-sm">
+                    تعديل المحتوى
+                </a>
+            </header>
+
+            <div class="ci-kpi-row">
+                <div class="ci-kpi fs-card">
+                    <span class="ci-kpi-icon">👥</span>
+                    <strong>@_data.EnrollmentCount</strong>
+                    <small>طالب مسجَّل</small>
+                </div>
+                <div class="ci-kpi fs-card">
+                    <span class="ci-kpi-icon">📖</span>
+                    <strong>@_data.TotalLessons</strong>
+                    <small>درس</small>
+                </div>
+                <div class="ci-kpi fs-card">
+                    <span class="ci-kpi-icon">📈</span>
+                    <strong>@_data.AvgWatchedPct.ToString("0.#")%</strong>
+                    <small>متوسط المشاهدة</small>
+                </div>
+                <div class="ci-kpi fs-card">
+                    <span class="ci-kpi-icon">✅</span>
+                    <strong>@_data.CompletionRate.ToString("0.#")%</strong>
+                    <small>نسبة الإكمال</small>
+                </div>
+                <div class="ci-kpi fs-card">
+                    <span class="ci-kpi-icon">⭐</span>
+                    <strong>@(_data.RatingsCount > 0 ? _data.RatingAvg.ToString("0.#") : "—")</strong>
+                    <small>التقييم (@_data.RatingsCount صوت)</small>
+                </div>
+                <div class="ci-kpi fs-card @(_data.UnansweredQuestions > 0 ? "alert" : "")">
+                    <span class="ci-kpi-icon">❓</span>
+                    <strong>@_data.UnansweredQuestions</strong>
+                    <small>سؤال بانتظار الرد</small>
+                </div>
+            </div>
+
+            <div class="ci-reactions fs-card">
+                <h3>🤝 ملخّص تفاعلات الطلاب (@_data.TotalReactions)</h3>
+                <div class="ci-react-bars">
+                    @{
+                        var max = Math.Max(1, Math.Max(_data.HelpfulCount, Math.Max(_data.ConfusingCount, _data.LovedCount)));
+                    }
+                    <div class="ci-react-row">
+                        <span class="rx-icon">👍</span>
+                        <div class="rx-bar"><div class="rx-fill helpful" style="width:@((int)(_data.HelpfulCount * 100.0 / max))%"></div></div>
+                        <strong>@_data.HelpfulCount</strong>
+                    </div>
+                    <div class="ci-react-row">
+                        <span class="rx-icon">🤔</span>
+                        <div class="rx-bar"><div class="rx-fill confusing" style="width:@((int)(_data.ConfusingCount * 100.0 / max))%"></div></div>
+                        <strong>@_data.ConfusingCount</strong>
+                    </div>
+                    <div class="ci-react-row">
+                        <span class="rx-icon">🎉</span>
+                        <div class="rx-bar"><div class="rx-fill loved" style="width:@((int)(_data.LovedCount * 100.0 / max))%"></div></div>
+                        <strong>@_data.LovedCount</strong>
+                    </div>
+                </div>
+            </div>
+
+            <div class="ci-table fs-card">
+                <div class="ci-table-head">
+                    <h3>📋 تفاصيل الدروس</h3>
+                    <div class="ci-tabs">
+                        <button class="ci-tab @(_sort == "order" ? "active" : "")" @onclick='() => SetSort("order")'>الترتيب</button>
+                        <button class="ci-tab @(_sort == "confusing" ? "active" : "")" @onclick='() => SetSort("confusing")'>أكثر إرباكًا</button>
+                        <button class="ci-tab @(_sort == "lowest_completion" ? "active" : "")" @onclick='() => SetSort("lowest_completion")'>أقل إكمالًا</button>
+                        <button class="ci-tab @(_sort == "unanswered" ? "active" : "")" @onclick='() => SetSort("unanswered")'>أسئلة معلّقة</button>
+                    </div>
+                </div>
+
+                @if (_data.Lessons.Length == 0)
+                {
+                    <p class="fs-text-muted">لا توجد دروس بعد.</p>
+                }
+                else
+                {
+                    <div class="ci-rows">
+                        @foreach (var l in SortedLessons)
+                        {
+                            var completionRate = _data.EnrollmentCount > 0
+                                ? (int)Math.Round((double)l.CompletionCount / _data.EnrollmentCount * 100)
+                                : 0;
+                            <article class="ci-row @(l.UnansweredCount > 0 ? "has-unanswered" : "")">
+                                <div class="ci-row-main">
+                                    <strong>📖 @l.ChapterTitle · @l.OrderNum. @l.LessonTitle</strong>
+                                    <div class="ci-row-metrics">
+                                        <span title="مشاهدات">👁 @l.ViewCount</span>
+                                        <span title="إكمال">✅ @l.CompletionCount (@completionRate%)</span>
+                                        <span title="متوسط المشاهدة">📈 @l.AvgWatchedPct.ToString("0.#")%</span>
+                                        @if (l.QuestionsCount > 0)
+                                        {
+                                            <span title="أسئلة" class="@(l.UnansweredCount > 0 ? "warn" : "")">
+                                                ❓ @l.QuestionsCount@(l.UnansweredCount > 0 ? $" ({l.UnansweredCount} بانتظار الرد)" : "")
+                                            </span>
+                                        }
+                                        @if (l.HelpfulCount + l.ConfusingCount + l.LovedCount > 0)
+                                        {
+                                            <span>👍 @l.HelpfulCount</span>
+                                            <span class="@(l.ConfusingCount > 2 ? "warn" : "")">🤔 @l.ConfusingCount</span>
+                                            <span>🎉 @l.LovedCount</span>
+                                        }
+                                    </div>
+                                </div>
+                                <div class="ci-row-actions">
+                                    <a href="/lessons/@l.LessonId/watch" class="fs-btn fs-btn-ghost fs-btn-sm">معاينة ←</a>
+                                </div>
+                            </article>
+                        }
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .ci-page { padding: var(--fs-s-8) 0; min-height: calc(100vh - 72px); }
+    .ci-back { display: inline-block; margin-bottom: var(--fs-s-3); color: var(--fs-text-muted); text-decoration: none; font-size: 14px; }
+    .ci-back:hover { color: var(--fs-primary); }
+
+    .ci-head { display: flex; justify-content: space-between; align-items: center; gap: var(--fs-s-2); margin-bottom: var(--fs-s-4); flex-wrap: wrap; }
+    .ci-head h1 { margin: 0; font-size: 24px; }
+
+    .ci-kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--fs-s-3); margin-bottom: var(--fs-s-4); }
+    .ci-kpi { padding: var(--fs-s-3); text-align: center; }
+    .ci-kpi.alert { background: linear-gradient(135deg, #FEE2E2 0%, var(--fs-surface) 60%); border-color: var(--fs-danger); }
+    .ci-kpi-icon { font-size: 24px; display: block; margin-bottom: 4px; }
+    .ci-kpi strong { display: block; font-size: 22px; font-weight: 800; color: var(--fs-primary); }
+    .ci-kpi small { font-size: 11px; color: var(--fs-text-muted); }
+
+    .ci-reactions { padding: var(--fs-s-4); margin-bottom: var(--fs-s-4); }
+    .ci-reactions h3 { margin: 0 0 var(--fs-s-3); font-size: 16px; }
+    .ci-react-bars { display: flex; flex-direction: column; gap: var(--fs-s-2); }
+    .ci-react-row { display: flex; align-items: center; gap: var(--fs-s-3); }
+    .rx-icon { font-size: 24px; width: 32px; text-align: center; }
+    .rx-bar { flex: 1; height: 14px; background: var(--fs-bg); border-radius: 7px; overflow: hidden; }
+    .rx-fill { height: 100%; transition: width var(--fs-trans); }
+    .rx-fill.helpful { background: #34D399; }
+    .rx-fill.confusing { background: #F59E0B; }
+    .rx-fill.loved { background: #F472B6; }
+    .ci-react-row strong { min-width: 40px; text-align: end; font-family: monospace; direction: ltr; }
+
+    .ci-table { padding: var(--fs-s-4); }
+    .ci-table-head { display: flex; justify-content: space-between; align-items: center; gap: var(--fs-s-2); margin-bottom: var(--fs-s-3); flex-wrap: wrap; }
+    .ci-table-head h3 { margin: 0; font-size: 16px; }
+    .ci-tabs { display: flex; gap: var(--fs-s-1); background: var(--fs-bg); padding: 3px; border-radius: var(--fs-r-full); flex-wrap: wrap; }
+    .ci-tab {
+        background: transparent; border: none; cursor: pointer;
+        padding: 6px 12px; border-radius: var(--fs-r-full);
+        font-size: 12px; font-weight: 600; color: var(--fs-text-muted);
+        font-family: inherit;
+    }
+    .ci-tab.active { background: white; color: var(--fs-primary); box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+
+    .ci-rows { display: flex; flex-direction: column; gap: var(--fs-s-2); }
+    .ci-row {
+        display: flex; align-items: center; gap: var(--fs-s-3);
+        padding: var(--fs-s-3);
+        background: var(--fs-bg); border-radius: var(--fs-r-md);
+        border-right: 4px solid var(--fs-border);
+    }
+    .ci-row.has-unanswered { border-right-color: var(--fs-danger); }
+    .ci-row-main { flex: 1; min-width: 0; }
+    .ci-row-main strong { display: block; font-size: 14px; margin-bottom: 4px; }
+    .ci-row-metrics { display: flex; flex-wrap: wrap; gap: var(--fs-s-3); font-size: 12px; color: var(--fs-text-muted); }
+    .ci-row-metrics .warn { color: var(--fs-danger); font-weight: 700; }
+    .ci-row-actions { flex-shrink: 0; }
+</style>
+
+@code {
+    [Parameter] public Guid CourseId { get; set; }
+
+    private FSEdu.Shared.Contracts.Courses.CourseInsightsDto? _data;
+    private bool _loaded;
+    private string _sort = "order";
+
+    private IEnumerable<FSEdu.Shared.Contracts.Courses.LessonInsightDto> SortedLessons
+    {
+        get
+        {
+            if (_data is null) return Enumerable.Empty<FSEdu.Shared.Contracts.Courses.LessonInsightDto>();
+            return _sort switch
+            {
+                "confusing" => _data.Lessons.OrderByDescending(l => l.ConfusingCount).ThenBy(l => l.OrderNum),
+                "lowest_completion" => _data.Lessons.OrderBy(l => l.CompletionCount).ThenBy(l => l.OrderNum),
+                "unanswered" => _data.Lessons.OrderByDescending(l => l.UnansweredCount).ThenBy(l => l.OrderNum),
+                _ => _data.Lessons.OrderBy(l => l.OrderNum)
+            };
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Auth.RestoreAsync();
+            if (Auth.CurrentUser is null || !(Auth.IsInRole("Teacher") || Auth.IsInRole("Admin")))
+            {
+                Nav.NavigateTo("/login");
+                return;
+            }
+            _data = await Api.GetCourseInsightsAsync(CourseId);
+            _loaded = true;
+            StateHasChanged();
+        }
+    }
+
+    private void SetSort(string s) { _sort = s; StateHasChanged(); }
+}
